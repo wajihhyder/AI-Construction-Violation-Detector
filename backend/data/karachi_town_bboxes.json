@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "description": "Approximate town bounding boxes (WGS84) for GPS → district/town. Smaller boxes win on overlap. Replace with official TMC GeoJSON for production accuracy.",
+    "karachi_bounds": { "min_lat": 24.75, "max_lat": 25.24, "min_lng": 66.72, "max_lng": 67.45 }
+  },
+  "areas": [
+    {"district": "District Central", "town": "Gulberg", "min_lat": 24.9, "max_lat": 24.97, "min_lng": 67.02, "max_lng": 67.12, "priority": 50},
+    {"district": "District Central", "town": "Liaquatabad", "min_lat": 24.9, "max_lat": 24.95, "min_lng": 67.04, "max_lng": 67.1, "priority": 50},
+    {"district": "District Central", "town": "Nazimabad", "min_lat": 24.94, "max_lat": 24.99, "min_lng": 67.02, "max_lng": 67.08, "priority": 50},
+    {"district": "District Central", "town": "New Karachi", "min_lat": 25.0, "max_lat": 25.08, "min_lng": 67.07, "max_lng": 67.16, "priority": 50},
+    {"district": "District Central", "town": "New Nazimabad", "min_lat": 24.98, "max_lat": 25.04, "min_lng": 67.01, "max_lng": 67.08, "priority": 50},
+
+    {"district": "District East", "town": "Ferozabad", "min_lat": 24.88, "max_lat": 24.93, "min_lng": 67.05, "max_lng": 67.12, "priority": 50},
+    {"district": "District East", "town": "Gulshan-e-Iqbal", "min_lat": 24.88, "max_lat": 24.95, "min_lng": 67.1, "max_lng": 67.18, "priority": 50},
+    {"district": "District East", "town": "Gulzar-e-Hijri", "min_lat": 24.94, "max_lat": 25.03, "min_lng": 67.18, "max_lng": 67.3, "priority": 50},
+    {"district": "District East", "town": "Jamshed Quarters", "min_lat": 24.87, "max_lat": 24.91, "min_lng": 67.07, "max_lng": 67.12, "priority": 50},
+
+    {"district": "Karachi South", "town": "Arambagh", "min_lat": 24.84, "max_lat": 24.88, "min_lng": 67.0, "max_lng": 67.05, "priority": 50},
+    {"district": "Karachi South", "town": "Civil Lines", "min_lat": 24.84, "max_lat": 24.88, "min_lng": 67.03, "max_lng": 67.08, "priority": 50},
+    {"district": "Karachi South", "town": "Garden", "min_lat": 24.86, "max_lat": 24.9, "min_lng": 67.01, "max_lng": 67.06, "priority": 50},
+    {"district": "Karachi South", "town": "Lyari", "min_lat": 24.84, "max_lat": 24.89, "min_lng": 66.98, "max_lng": 67.03, "priority": 50},
+    {"district": "Karachi South", "town": "Saddar", "min_lat": 24.84, "max_lat": 24.88, "min_lng": 67.01, "max_lng": 67.06, "priority": 55},
+
+    {"district": "Karachi West", "town": "Mango Pir", "min_lat": 25.02, "max_lat": 25.12, "min_lng": 66.98, "max_lng": 67.08, "priority": 50},
+    {"district": "Karachi West", "town": "Mominabad", "min_lat": 24.92, "max_lat": 24.98, "min_lng": 67.0, "max_lng": 67.06, "priority": 50},
+    {"district": "Karachi West", "town": "Orangi Town", "min_lat": 24.94, "max_lat": 25.03, "min_lng": 66.95, "max_lng": 67.04, "priority": 50},
+
+    {"district": "Keamari", "town": "Baldia", "min_lat": 24.91, "max_lat": 24.98, "min_lng": 66.9, "max_lng": 67.02, "priority": 50},
+    {"district": "Keamari", "town": "Harbor", "min_lat": 24.8, "max_lat": 24.88, "min_lng": 66.76, "max_lng": 66.92, "priority": 52},
+    {"district": "Keamari", "town": "Maripur", "min_lat": 24.82, "max_lat": 24.93, "min_lng": 66.82, "max_lng": 66.95, "priority": 50},
+    {"district": "Keamari", "town": "SITE", "min_lat": 24.88, "max_lat": 24.95, "min_lng": 66.95, "max_lng": 67.02, "priority": 50},
+
+    {"district": "Korangi", "town": "Korangi", "min_lat": 24.82, "max_lat": 24.9, "min_lng": 67.18, "max_lng": 67.28, "priority": 50},
+    {"district": "Korangi", "town": "Landhi", "min_lat": 24.84, "max_lat": 24.9, "min_lng": 67.2, "max_lng": 67.32, "priority": 50},
+    {"district": "Korangi", "town": "Model Colony", "min_lat": 24.84, "max_lat": 24.9, "min_lng": 67.11, "max_lng": 67.2, "priority": 50},
+    {"district": "Korangi", "town": "Shah Faisal", "min_lat": 24.86, "max_lat": 24.93, "min_lng": 67.15, "max_lng": 67.25, "priority": 50},
+
+    {"district": "Malir", "town": "Airport", "min_lat": 24.9, "max_lat": 24.96, "min_lng": 67.12, "max_lng": 67.22, "priority": 50},
+    {"district": "Malir", "town": "Bin Qasim", "min_lat": 24.78, "max_lat": 24.87, "min_lng": 67.28, "max_lng": 67.42, "priority": 50},
+    {"district": "Malir", "town": "Gadap", "min_lat": 25.0, "max_lat": 25.22, "min_lng": 67.15, "max_lng": 67.45, "priority": 40},
+    {"district": "Malir", "town": "Ibrahim Hyderi", "min_lat": 24.8, "max_lat": 24.87, "min_lng": 67.12, "max_lng": 67.24, "priority": 50},
+    {"district": "Malir", "town": "Murad Memon", "min_lat": 24.88, "max_lat": 24.96, "min_lng": 67.18, "max_lng": 67.32, "priority": 50},
+    {"district": "Malir", "town": "Shah Mureed", "min_lat": 24.84, "max_lat": 24.96, "min_lng": 67.24, "max_lng": 67.4, "priority": 45}
+  ]
+}

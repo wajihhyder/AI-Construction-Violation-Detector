@@ -1,0 +1,28 @@
+# Backend
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/*.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Logs
+*.log
+
+# PyInstaller / local Windows release (rebuild with scripts/build_exe.ps1)
+backend/dist/
+backend/build/
+ConstructionViolationDetection-Windows/
+ConstructionViolationDetection-Windows.zip
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

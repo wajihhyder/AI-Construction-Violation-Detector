@@ -1,0 +1,85 @@
+import sys
+from pathlib import Path
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _base_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # JWT signing — change in production; required unless VIOSCAN_DEV_DEFAULT_SECRET=1 (dev only)
+    SECRET_KEY: str = ""
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+
+    DATABASE_URL: str = "sqlite:///./vioscan.db"
+
+    # Optional: Geoapify reverse geocoding (https://www.geoapify.com/). Leave empty for manual district only.
+    GEOAPIFY_API_KEY: str = ""
+
+    UPLOAD_DIR: str = "./uploads"
+    MAX_FILE_SIZE_MB: int = 10
+
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # Override path to built Vite output (default: repo ../frontend/dist; frozen: _MEIPASS/dist)
+    FRONTEND_DIST: str = ""
+
+    # When true, do not mount frontend/dist at / on the API server (use http://localhost:5173 for UI in dev).
+    DISABLE_SPA_ON_API: bool = False
+
+    # Printable notice (optional — blank means template shows fill-in lines)
+    NOTICE_REPLY_DAYS: int = 7
+    NOTICE_OFFICE_LINE1: str = ""
+    NOTICE_OFFICE_LINE2: str = ""
+    NOTICE_CONTACT_LINE: str = ""
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def secret_or_dev(cls, v: str) -> str:
+        if v:
+            return v
+        import os
+
+        if os.environ.get("VIOSCAN_DEV_DEFAULT_SECRET") == "1" or getattr(sys, "frozen", False):
+            return "vioscan-dev-insecure-change-me-use-env-secret-key"
+        raise ValueError("SECRET_KEY is required. Set in .env or export VIOSCAN_DEV_DEFAULT_SECRET=1 for local dev only.")
+
+    def resolved_frontend_dist(self) -> Path | None:
+        if self.FRONTEND_DIST:
+            p = Path(self.FRONTEND_DIST)
+            if not p.is_absolute():
+                p = _base_dir() / p
+        elif getattr(sys, "frozen", False):
+            # PyInstaller bundles SPA at _MEIPASS/dist
+            p = _base_dir() / "dist"
+        else:
+            p = _base_dir().parent / "frontend" / "dist"
+        if (p / "index.html").exists():
+            return p.resolve()
+        return None
+
+    def cors_origins(self) -> list[str]:
+        u = self.FRONTEND_URL.rstrip("/")
+        out = {
+            u,
+            "http://127.0.0.1:8000",
+            "http://localhost:8000",
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:4173",
+            "http://localhost:4173",
+        }
+        if self.resolved_frontend_dist():
+            out.update({"http://127.0.0.1:8000", "http://localhost:8000"})
+        return sorted(out)
+
+
+settings = Settings()

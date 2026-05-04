@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ report_title }} — {{ ref_no }}</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 16mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Times New Roman", Times, serif;
+        font-size: 11.5pt;
+        line-height: 1.42;
+        color: #000;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 12px;
+      }
+      .doc-title {
+        text-align: center;
+        font-size: 15pt;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin: 0 0 4px;
+      }
+      .doc-sub {
+        text-align: center;
+        font-size: 10pt;
+        color: #333;
+        margin: 0 0 18px;
+      }
+      .rule {
+        border: 0;
+        border-top: 1px solid #000;
+        margin: 10px 0 14px;
+      }
+      .header-row {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 10.5pt;
+      }
+      .right-block {
+        text-align: right;
+      }
+      h2.section {
+        font-size: 11pt;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin: 18px 0 8px;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 4px;
+      }
+      table.meta {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10.5pt;
+        margin: 8px 0;
+      }
+      table.meta th,
+      table.meta td {
+        border: 1px solid #222;
+        padding: 6px 10px;
+        vertical-align: top;
+      }
+      table.meta th {
+        width: 32%;
+        background: #f5f5f5;
+        font-weight: 600;
+        text-align: left;
+      }
+      .summary {
+        text-align: justify;
+        margin: 10px 0;
+      }
+      ul.lines {
+        margin: 8px 0;
+        padding-left: 22px;
+      }
+      ul.lines li {
+        margin: 4px 0;
+      }
+      .meta-footer {
+        margin-top: 22px;
+        padding-top: 12px;
+        border-top: 1px solid #999;
+        font-size: 9.5pt;
+        color: #333;
+      }
+      .sign {
+        margin-top: 36px;
+        text-align: right;
+      }
+      .no-print {
+        font-size: 10px;
+        color: #555;
+        margin-bottom: 14px;
+      }
+      @media print {
+        .no-print {
+          display: none !important;
+        }
+        body {
+          padding: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p class="no-print">
+      Use <strong>Print</strong> (Ctrl+P) to print or save as PDF. This document uses a neutral layout suitable for
+      authority records (no institutional logo block).
+    </p>
+
+    <div class="doc-title">{{ report_title }}</div>
+    <div class="doc-sub">Violations screening record · internal / regulatory reference copy</div>
+
+    <hr class="rule" />
+    <div class="header-row">
+      <div><strong>Reference:</strong> {{ ref_no }}</div>
+      <div class="right-block">
+        <div><strong>Dated:</strong> {{ dated }}</div>
+        <div>{{ office_line1 }}</div>
+        <div>{{ office_line2 }}</div>
+        <div style="margin-top: 6px; font-size: 10pt">{{ contact_line }}</div>
+      </div>
+    </div>
+    <hr class="rule" />
+
+    <h2 class="section">1. Identification</h2>
+    <table class="meta">
+      {% for label, value in identification_rows %}
+      <tr>
+        <th>{{ label }}</th>
+        <td>{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <h2 class="section">2. Location &amp; capture</h2>
+    <table class="meta">
+      <tr>
+        <th>GPS (indicative)</th>
+        <td>{{ gps_coords }}</td>
+      </tr>
+      <tr>
+        <th>Evidence channel</th>
+        <td>{{ input_label }}</td>
+      </tr>
+      <tr>
+        <th>Reporter classification</th>
+        <td>{{ reporter_type }}</td>
+      </tr>
+    </table>
+
+    <h2 class="section">3. Executive summary</h2>
+    <p class="summary">{{ executive_summary }}</p>
+
+    <h2 class="section">4. Automated screening summary</h2>
+    <table class="meta">
+      {% for label, value in screening_rows %}
+      <tr>
+        <th>{{ label }}</th>
+        <td>{{ value }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <h2 class="section">5. Evidence on file</h2>
+    <p class="summary"><strong>Image / evidence reference:</strong> {{ evidence_path }}</p>
+    {% if evidence_url_hint %}
+    <p class="summary" style="font-size: 10pt; color: #444">{{ evidence_url_hint }}</p>
+    {% endif %}
+
+    <h2 class="section">6. Notes &amp; handling</h2>
+    {% if notes %}
+    <p class="summary"><strong>Authority notes:</strong> {{ notes }}</p>
+    {% else %}
+    <p class="summary"><em>No additional notes recorded.</em></p>
+    {% endif %}
+
+    <h2 class="section">7. Recommended follow-up</h2>
+    <p class="summary">{{ follow_up_guidance }}</p>
+
+    <div class="meta-footer">
+      <strong>Record integrity:</strong> Report #{{ report_id_padded }} · District {{ district }} · Workflow status
+      <strong>{{ status }}</strong>. Generated from AI Powered Construction Violation Detection authority workflows; coordinates are indicative pending survey.
+    </div>
+
+    <div class="sign">
+      <div>{{ signature_title }}</div>
+      <div style="margin-top: 28px; border-top: 1px solid #000; width: 220px; margin-left: auto; padding-top: 6px; font-size: 10pt">
+        Name &amp; designation (optional)
+      </div>
+    </div>
+  </body>
+</html>
