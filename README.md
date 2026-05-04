@@ -205,6 +205,17 @@ Output folder:
 - **Rate limiting** (`slowapi`): login and citizen report submission limited per IP.
 - **Access logging**: request middleware logs method, path, status, duration.
 
+## Recent updates (May 2026)
+
+- **Branding update**: user-facing product name is now **AI Powered Construction Violation Detection** (frontend UI labels, API title, docs, and Windows bundle naming).
+- **GPS admin-area mapping**: added GPS-to-`Town (District)` detection for Karachi using `backend/data/karachi_town_bboxes.json` via `services/admin_areas_service.py`.
+- **Geocoding behavior**: `/api/geocoding/reverse` and `/api/geocoding/lookup` now return structured district/town labels from local Karachi admin mapping first, with optional Geoapify fallback.
+- **Citizen submission flow**: complaint `district_location` now supports mapped area labels (for example, `Lyari (Karachi South)`), improving downstream filtering.
+- **Frontend responsiveness**: reduced delay in “Karachi Districts and Towns” step by bundling area labels in frontend constants and removing unnecessary district-list API round-trips in key views.
+- **Rule-engine compatibility**: district rule lookup now accepts both full labels (`Town (District)`) and town-only names.
+- **Desktop packaging changes**: replaced `backend/vioscan.spec` with `backend/windows_bundle.spec`; bundle output and docs now reference `ConstructionViolationDetection.exe`.
+- **Type-checker reliability**: added root `pyrightconfig.json` to point static analysis to `backend/venv`.
+
 ## License / disclaimer
 
 Prototype for academic / civic use. Regulatory rules in `rule_engine.py` are **illustrative** — replace with official SBCA data before any production use.
