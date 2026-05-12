@@ -83,6 +83,38 @@ Schedule this via Task Scheduler or cron on your server.
 
 Run **uvicorn** (or gunicorn + uvicorn workers) behind **nginx** or another reverse proxy with TLS certificates (Let’s Encrypt). Set `FRONTEND_URL` to your HTTPS origin for CORS.
 
+### Quick demo deployment
+
+For the fastest demo deployment, use a **single Docker-backed web service** instead of splitting frontend and backend:
+
+- `Dockerfile` builds the React frontend and serves it from the FastAPI backend
+- `render.yaml` provisions a Render web service with a persistent disk for:
+  - SQLite database
+  - uploaded files
+  - annotated evidence images
+- `best_floor.pt` is copied into the image and loaded from `/app/best_floor.pt`
+
+Recommended demo host: **Render**
+
+1. Push this repo to GitHub.
+2. In Render, create a **Blueprint** or **New Web Service** from the repo.
+3. Use the included `render.yaml`.
+4. Set these secret env vars in Render:
+   - `SECRET_KEY`
+   - `GEOAPIFY_API_KEY` (optional)
+   - `FRONTEND_URL` = your Render service URL, e.g. `https://your-app.onrender.com`
+5. After the first deploy, open a Render shell and seed the default admin:
+
+```bash
+cd /app/backend
+python seed.py
+```
+
+Then log in with:
+
+- username: `admin`
+- password: `Admin@1234`
+
 ### Workers
 
 For higher throughput: `uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4` (no `--reload`).

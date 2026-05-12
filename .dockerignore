@@ -1,0 +1,15 @@
+.git
+.gitignore
+.cursor
+agent-transcripts
+mcps
+assets
+backend/venv
+backend/__pycache__
+backend/uploads
+backend/dist
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+2.pt
