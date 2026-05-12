@@ -41,11 +41,6 @@ async def run_ai_analysis(
         district = report.district_location
 
         abs_path = absolute_path_from_url(image_rel_path)
-        if input_type_street:
-            result = await ai_service.process_street_view_image(abs_path, district)
-        else:
-            result = await ai_service.process_aerial_image(abs_path, district)
-
         # Order: task arg (same as submit), DB column, EXIF re-read from disk, Karachi default.
         coords = (
             fallback_gps
@@ -53,6 +48,10 @@ async def run_ai_analysis(
             or get_gps_string_for_saved_path(image_rel_path)
             or DEFAULT_GPS
         )
+        if input_type_street:
+            result = await ai_service.process_street_view_image(abs_path, district)
+        else:
+            result = await ai_service.process_aerial_image(abs_path, district, coords)
         raw_evidence = result.get("image_evidence_path") or image_rel_path
         if isinstance(raw_evidence, str) and raw_evidence.startswith("/uploads/"):
             evidence_path = raw_evidence

@@ -68,3 +68,29 @@ def check_setback_violation(measured_setback_m: float, district: str) -> dict:
         "setback_error": 0.0,
         "detail": "Compliant",
     }
+
+
+def check_encroachment_violation(encroachment_depth_m: float, district: str) -> dict:
+    """
+    Encroachment = building footprint extends into the SBCA-required setback strip
+    along the road / parcel boundary. `encroachment_depth_m` is the measured deficit.
+    """
+    if encroachment_depth_m <= 0:
+        return {
+            "violation_flag": False,
+            "violation_type": None,
+            "setback_error": 0.0,
+            "detail": "Compliant",
+        }
+    rules = get_district_rules(district)
+    min_required = rules["min_setback_m"]
+    depth = round(encroachment_depth_m, 2)
+    return {
+        "violation_flag": True,
+        "violation_type": "Encroachment",
+        "setback_error": depth,
+        "detail": (
+            f"Building footprint extends {depth}m into the required "
+            f"{min_required}m setback in {district}."
+        ),
+    }

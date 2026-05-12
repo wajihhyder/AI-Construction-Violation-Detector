@@ -79,6 +79,11 @@ export function ResultStep({ data, onReset }: Props) {
           Setback deviation: {ai.setback_error} meters below required minimum
         </p>
       )}
+      {ai?.violation_type === 'Encroachment' && ai.setback_error != null && (
+        <p className="text-sm text-[#888]">
+          Building extends {ai.setback_error} meters into the required road / boundary setback in {district}.
+        </p>
+      )}
 
       {imgSrc && (
         <img

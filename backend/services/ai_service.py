@@ -2,9 +2,9 @@
 AI Service — Construction Violation Detection
 =============================================
 Street-view uploads are analyzed with the configured YOLO checkpoint.
-The provided `best_floor.pt` model is treated as a floor detector, so
-street-view reports can be screened automatically while aerial reports
-are routed into manual review until a dedicated aerial model exists.
+The provided `best_floor.pt` model is treated as a floor detector for
+street-view reports, while aerial uploads are screened by the encroachment
+package (OSM building / road footprints vs the SBCA setback rule).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from uuid import uuid4
 from PIL import Image
 
 from core.config import settings
+from services.encroachment import analyze_aerial_encroachment
 from services.rule_engine import check_floor_violation
 
 _STREET_MODEL = None
@@ -134,20 +135,24 @@ async def process_street_view_image(image_path: str, district: str) -> dict:
     return await asyncio.to_thread(_run_street_model, image_path, district)
 
 
-async def process_aerial_image(image_path: str, district: str) -> dict:
+async def process_aerial_image(
+    image_path: str,
+    district: str,
+    gps_coords: str | None = None,
+) -> dict:
     """
-    Aerial images need a separate model for setback / encroachment analysis.
-    Until that exists, route the report to manual review without claiming compliance.
+    Aerial images are screened for road / setback encroachment using OSM
+    footprints; reports without usable context are routed to manual review.
     """
-    return {
-        "violation_flag": False,
-        "violation_type": "Manual_Review",
+    result = await analyze_aerial_encroachment(image_path, district, gps_coords)
+    payload: dict = {
+        "violation_flag": result.violation_flag,
+        "violation_type": result.violation_type,
         "detected_floors": None,
-        "setback_error": None,
-        "image_evidence_path": image_path,
-        "workflow_status": "Under_Review",
-        "notes": (
-            "Aerial image received. The configured model detects floors only, "
-            "so this report has been routed for manual setback/encroachment review."
-        ),
+        "setback_error": result.setback_error,
+        "image_evidence_path": result.image_evidence_path,
+        "notes": result.notes,
     }
+    if result.workflow_status:
+        payload["workflow_status"] = result.workflow_status
+    return payload
