@@ -64,6 +64,8 @@ async def run_ai_analysis(
             detected_floors=result.get("detected_floors"),
             setback_error=result.get("setback_error"),
             image_evidence_path=evidence_path,
+            encroachment_total_m2=result.get("encroachment_total_m2"),
+            encroachment_breakdown=result.get("encroachment_breakdown"),
         )
         db.add(ai_row)
         db.flush()

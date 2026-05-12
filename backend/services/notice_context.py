@@ -67,7 +67,13 @@ def build_notice_context(report: ViolationsReport, settings) -> dict:
                 else "Whereas, further measured survey is required to confirm setback compliance."
             ),
         ]
-    elif vt == "Encroachment":
+    elif vt in {
+        "Encroachment",
+        "Road_Encroachment",
+        "Public_Space_Encroachment",
+        "Water_Encroachment",
+        "Unmapped_Construction",
+    }:
         subject = (
             "ENCROACHMENT / UNAUTHORIZED EXTENSION — ALLEGED PROJECTION BEYOND LEGAL BOUNDARY OR PUBLIC ROW."
         )

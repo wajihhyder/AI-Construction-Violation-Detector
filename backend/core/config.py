@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     AI_STREET_MODEL_PATH: str = "../best_floor.pt"
     AI_STREET_MODEL_CONFIDENCE: float = 0.15
     AI_STREET_MODEL_IOU: float = 0.3
+
+    # Aerial encroachment building segmenter — train on the Roboflow dataset
+    # described in backend/data/encroachment_dataset.yaml.
+    AI_ENCROACHMENT_MODEL_PATH: str = "../best_encroachment.pt"
+    AI_ENCROACHMENT_CONFIDENCE: float = 0.25
+    AI_ENCROACHMENT_IOU: float = 0.45
+    # Real-world span (m) of the longer side of an aerial submission; tune to
+    # the zoom level citizens typically capture.
+    AI_ENCROACHMENT_IMAGE_SPAN_M: float = 300.0
+    # Half-width (m) applied to OSM road centerlines to approximate ROW.
+    AI_ENCROACHMENT_ROAD_BUFFER_M: float = 4.0
+
     AI_DEVICE: str = "cpu"
 
     FRONTEND_URL: str = "http://localhost:5173"
@@ -72,6 +84,12 @@ class Settings(BaseSettings):
 
     def resolved_ai_street_model_path(self) -> Path:
         p = Path(self.AI_STREET_MODEL_PATH)
+        if not p.is_absolute():
+            p = _base_dir() / p
+        return p.resolve()
+
+    def resolved_ai_encroachment_model_path(self) -> Path:
+        p = Path(self.AI_ENCROACHMENT_MODEL_PATH)
         if not p.is_absolute():
             p = _base_dir() / p
         return p.resolve()

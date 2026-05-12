@@ -1,3 +1,12 @@
+export type EncroachmentCategory =
+  | 'road'
+  | 'public_space'
+  | 'water'
+  | 'unmapped'
+  | 'compliant'
+
+export type EncroachmentBreakdown = Partial<Record<EncroachmentCategory, number>>
+
 export type AIResult = {
   violation_flag: boolean
   violation_type: string | null
@@ -5,6 +14,8 @@ export type AIResult = {
   setback_error: number | null
   gps_coords: string
   image_evidence_path: string
+  encroachment_total_m2?: number | null
+  encroachment_breakdown?: EncroachmentBreakdown | null
 }
 
 export type CitizenReportPoll = {

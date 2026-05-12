@@ -4,6 +4,7 @@ import { Bookmark } from 'lucide-react'
 import type { CitizenReportPoll } from '../../types/report'
 import { maxFloorsForDistrict } from '../../constants/sbca'
 import { CopyTrackingIdButton } from '../../components/shared/CopyTrackingIdButton'
+import { EncroachmentSummary } from '../../components/shared/EncroachmentSummary'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { ViolationBadge } from '../../components/shared/ViolationBadge'
@@ -52,8 +53,13 @@ export function ResultStep({ data, onReset }: Props) {
       ) : violation ? (
         <div className="rounded-[var(--radius-lg)] border-2 border-white bg-black px-6 py-4 text-center font-semibold text-white">
           VIOLATION DETECTED
-          <div className="mt-2 flex justify-center">
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
             <ViolationBadge type={ai?.violation_type ?? null} />
+            {ai?.encroachment_total_m2 != null && (
+              <span className="text-xs text-[#bbb]">
+                Area: <span className="font-mono text-white">{ai.encroachment_total_m2.toFixed(1)} m²</span>
+              </span>
+            )}
           </div>
         </div>
       ) : (
@@ -79,10 +85,11 @@ export function ResultStep({ data, onReset }: Props) {
           Setback deviation: {ai.setback_error} meters below required minimum
         </p>
       )}
-      {ai?.violation_type === 'Encroachment' && ai.setback_error != null && (
-        <p className="text-sm text-[#888]">
-          Building extends {ai.setback_error} meters into the required road / boundary setback in {district}.
-        </p>
+      {ai?.encroachment_breakdown && (
+        <EncroachmentSummary
+          total={ai.encroachment_total_m2}
+          breakdown={ai.encroachment_breakdown}
+        />
       )}
 
       {imgSrc && (

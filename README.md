@@ -62,12 +62,13 @@ Health check: `GET http://localhost:8000/health`
 
 ### Connecting the AI model
 
-The repo is now wired to load `best_floor.pt` as the default street-view floor detector.
+The repo is wired to load `best_floor.pt` (street-view floor detector) and `best_encroachment.pt` (aerial building segmenter) by default.
 
 1. Install backend dependencies with `pip install --prefer-binary -r requirements.txt`.
 2. Keep `best_floor.pt` in the repo root, or set `AI_STREET_MODEL_PATH` in `backend/.env`.
-3. Submit a `Street View` image from the citizen flow to trigger YOLO inference and save an annotated image under `/uploads/...`.
-4. Aerial uploads are currently routed to manual review until you add a dedicated setback / encroachment model in `backend/services/ai_service.py`.
+3. Train the aerial building segmenter from `backend/data/encroachment_dataset.yaml` (the Roboflow `encroachment-dwic8` v31 dataset, "Buildings" class). Copy the resulting weights to `best_encroachment.pt` in the repo root, or set `AI_ENCROACHMENT_MODEL_PATH`.
+4. Submit a `Street View` image to trigger floor inference; submit an `Aerial / Satellite` image (with GPS) to trigger building segmentation + OSM-overlay encroachment classification (road / public-space / water / unmapped / compliant). Annotated evidence is saved under `/uploads/...`.
+5. Tune `AI_ENCROACHMENT_IMAGE_SPAN_M` to the real-world span (meters) of the aerial screenshots citizens submit, and `AI_ENCROACHMENT_ROAD_BUFFER_M` to the half-width used to approximate road right-of-way.
 
 ### SQLite backup (manual)
 

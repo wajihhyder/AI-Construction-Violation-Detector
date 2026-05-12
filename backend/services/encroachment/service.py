@@ -1,215 +1,100 @@
 """
-Aerial encroachment analysis.
+Aerial encroachment screening pipeline.
 
-Given an aerial image plus its GPS coords and the district where it was submitted,
-we compare the building closest to the GPS pin against OSM road footprints and
-the SBCA minimum-setback rule for that district. The output uses the existing
-AIAnalysisResult schema: `violation_type` is set to "Encroachment" when a
-building extends onto / under the required setback strip, with the deficit
-recorded in `setback_error` (meters).
+1. YOLO building segmenter (Roboflow encroachment dataset) finds candidate
+   building footprints in the submitted aerial image (pixel space).
+2. OpenStreetMap context (roads, public-space, water, mapped buildings) is
+   pulled for the lat/lng around the submission.
+3. The OSM features are projected to the same pixel grid using a configurable
+   real-world span (AI_ENCROACHMENT_IMAGE_SPAN_M).
+4. Each detected building footprint is sliced into per-category geometries:
+   road / public-space / water / unmapped / compliant. Areas are accumulated
+   in m² and a color-coded overlay JPEG is written next to the original
+   upload — matching the screenshot the SBCA team designed.
 
-We annotate the aerial image with the offending building outline and the
-encroachment buffer to give SBCA staff visual evidence.
+Anywhere the pipeline cannot run with confidence (model missing, no GPS,
+Overpass unreachable) the aerial report is routed to manual review without
+fabricating numbers.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
-from PIL import Image, ImageDraw
-from shapely.geometry import LineString, Point, Polygon
+from PIL import Image, ImageDraw, ImageFont
+from shapely.affinity import scale, translate
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import nearest_points
 
 from core.config import settings
-from services.encroachment.osm_client import (
-    DEFAULT_SEARCH_RADIUS_M,
-    fetch_nearby_features,
-)
-from services.rule_engine import get_district_rules
+from services.encroachment.osm_client import OSMContext, fetch_osm_context
+from services.encroachment.segmenter import detect_building_polygons
 
 logger = logging.getLogger(__name__)
 
-EARTH_RADIUS_M = 6_371_000.0
-EVIDENCE_CANVAS_PX = 720
-MIN_BUILDING_OVERLAP_M = 0.10  # below this we treat as measurement noise
+
+ENCROACHMENT_CATEGORIES: tuple[str, ...] = (
+    "road",
+    "public_space",
+    "water",
+    "unmapped",
+    "compliant",
+)
+
+VIOLATION_TYPE_BY_CATEGORY = {
+    "road": "Road_Encroachment",
+    "public_space": "Public_Space_Encroachment",
+    "water": "Water_Encroachment",
+    "unmapped": "Unmapped_Construction",
+}
+
+CATEGORY_COLORS = {
+    "road": (255, 60, 95, 165),         # pink/red
+    "public_space": (200, 80, 220, 150),  # magenta
+    "water": (80, 170, 255, 150),       # blue
+    "unmapped": (255, 175, 70, 150),    # amber
+    "compliant": (70, 200, 120, 150),   # green
+}
+CATEGORY_LABELS = {
+    "road": "Road encroachment",
+    "public_space": "Public-space encroachment",
+    "water": "Water encroachment",
+    "unmapped": "Unmapped construction",
+    "compliant": "Compliant footprint",
+}
+
+MIN_FRAGMENT_AREA_PX = 8.0
+LEGEND_PAD_PX = 14
+SWATCH_PX = 14
 
 
 @dataclass(frozen=True)
 class EncroachmentResult:
     violation_flag: bool
     violation_type: str | None
-    setback_error: float | None
+    total_area_m2: float
+    breakdown_m2: dict[str, float]
     image_evidence_path: str
     notes: str
     workflow_status: str | None = None
 
-
-def _meters_per_degree(lat: float) -> tuple[float, float]:
-    """Return (meters per deg lat, meters per deg lng) at the given latitude."""
-    lat_rad = math.radians(lat)
-    m_per_deg_lat = 111_132.92 - 559.82 * math.cos(2 * lat_rad)
-    m_per_deg_lng = 111_412.84 * math.cos(lat_rad)
-    return m_per_deg_lat, max(m_per_deg_lng, 1e-6)
-
-
-def _project_to_meters(
-    geom: BaseGeometry,
-    origin_lat: float,
-    origin_lng: float,
-) -> BaseGeometry:
-    """Flat-earth project lon/lat geometry to local meters centred on origin."""
-    m_lat, m_lng = _meters_per_degree(origin_lat)
-
-    def _xy(x: float, y: float) -> tuple[float, float]:
-        return ((x - origin_lng) * m_lng, (y - origin_lat) * m_lat)
-
-    if isinstance(geom, Polygon):
-        exterior = [_xy(x, y) for x, y in geom.exterior.coords]
-        return Polygon(exterior)
-    if isinstance(geom, LineString):
-        return LineString([_xy(x, y) for x, y in geom.coords])
-    if isinstance(geom, Point):
-        return Point(_xy(geom.x, geom.y))
-    raise TypeError(f"Unsupported geometry: {type(geom).__name__}")
-
-
-def _pick_target_building(
-    buildings: list[Polygon],
-    origin_lat: float,
-    origin_lng: float,
-) -> tuple[Polygon, Polygon] | None:
-    """
-    Return (lonlat_polygon, projected_meters_polygon) for the building whose
-    footprint sits closest to the GPS pin, or None if none can be projected.
-    """
-    pin = Point(0.0, 0.0)
-    best: tuple[float, Polygon, Polygon] | None = None
-    for b in buildings:
-        projected = _project_to_meters(b, origin_lat, origin_lng)
-        if not isinstance(projected, Polygon):
-            continue
-        distance = projected.distance(pin)
-        if best is None or distance < best[0]:
-            best = (distance, b, projected)
-    return (best[1], best[2]) if best else None
-
-
-def _measure_encroachment(
-    building_m: Polygon,
-    roads_m: list[LineString],
-    required_setback_m: float,
-) -> float:
-    """
-    Return the maximum encroachment depth (meters) of `building_m` into the
-    required setback strip alongside any nearby road. 0.0 means no breach.
-    """
-    if not roads_m or required_setback_m <= 0:
-        return 0.0
-    worst = 0.0
-    for road in roads_m:
-        try:
-            buffer_poly = road.buffer(required_setback_m, cap_style=2)
-        except (ValueError, TypeError):
-            continue
-        if not buffer_poly.intersects(building_m):
-            continue
-        overlap = buffer_poly.intersection(building_m)
-        if overlap.is_empty:
-            continue
-        nearest_road_pt, nearest_building_pt = nearest_points(road, building_m)
-        gap = nearest_road_pt.distance(nearest_building_pt)
-        deficit = max(required_setback_m - gap, 0.0)
-        if deficit > worst:
-            worst = deficit
-    return worst
-
-
-def _annotate_aerial(
-    image_path: str,
-    building_lonlat: Polygon | None,
-    roads_lonlat: list[LineString],
-    origin_lat: float,
-    origin_lng: float,
-    required_setback_m: float,
-) -> str:
-    """Render the OSM polygons / setback buffer onto the aerial image."""
-    try:
-        with Image.open(image_path) as img:
-            base = img.convert("RGB").copy()
-    except (FileNotFoundError, OSError) as e:
-        logger.warning("Cannot open aerial image %s for annotation: %s", image_path, e)
-        return image_path
-
-    canvas_w, canvas_h = base.size
-    if min(canvas_w, canvas_h) > EVIDENCE_CANVAS_PX:
-        scale = EVIDENCE_CANVAS_PX / float(min(canvas_w, canvas_h))
-        canvas_w = int(canvas_w * scale)
-        canvas_h = int(canvas_h * scale)
-        base = base.resize((canvas_w, canvas_h))
-
-    geoms_m: list[BaseGeometry] = []
-    if building_lonlat is not None:
-        geoms_m.append(_project_to_meters(building_lonlat, origin_lat, origin_lng))
-    geoms_m.extend(_project_to_meters(r, origin_lat, origin_lng) for r in roads_lonlat)
-    if not geoms_m:
-        return image_path
-
-    extent = max((g.bounds[2] - g.bounds[0] for g in geoms_m), default=0.0)
-    extent = max(extent, max((g.bounds[3] - g.bounds[1] for g in geoms_m), default=0.0))
-    extent = max(extent, 4 * max(required_setback_m, 1.0))
-    half = extent / 2.0 + max(required_setback_m, 1.0)
-    px_per_m = min(canvas_w, canvas_h) / (2 * half)
-
-    def _to_px(x: float, y: float) -> tuple[float, float]:
-        return (canvas_w / 2 + x * px_per_m, canvas_h / 2 - y * px_per_m)
-
-    overlay = base.copy()
-    draw = ImageDraw.Draw(overlay, "RGBA")
-    for road in roads_lonlat:
-        line_m = _project_to_meters(road, origin_lat, origin_lng)
-        if not isinstance(line_m, LineString):
-            continue
-        pts = [_to_px(x, y) for x, y in line_m.coords]
-        if len(pts) >= 2:
-            draw.line(pts, fill=(80, 200, 255, 255), width=3)
-        if required_setback_m > 0:
-            buffer_poly = line_m.buffer(required_setback_m, cap_style=2)
-            if isinstance(buffer_poly, Polygon) and not buffer_poly.is_empty:
-                ring = [_to_px(x, y) for x, y in buffer_poly.exterior.coords]
-                if len(ring) >= 3:
-                    draw.polygon(ring, fill=(255, 200, 80, 60), outline=(255, 200, 80, 200))
-
-    if building_lonlat is not None:
-        building_m = _project_to_meters(building_lonlat, origin_lat, origin_lng)
-        if isinstance(building_m, Polygon):
-            ring = [_to_px(x, y) for x, y in building_m.exterior.coords]
-            if len(ring) >= 3:
-                draw.polygon(ring, fill=(255, 80, 80, 90), outline=(255, 80, 80, 255))
-
-    pin = _to_px(0.0, 0.0)
-    r = 6
-    draw.ellipse((pin[0] - r, pin[1] - r, pin[0] + r, pin[1] + r), fill=(255, 255, 255, 255))
-
-    out_dir = Path(settings.UPLOAD_DIR)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_name = f"encroachment_{uuid4().hex}.jpg"
-    out_path = out_dir / out_name
-    overlay.save(out_path, format="JPEG", quality=92)
-    return f"/uploads/{out_name}"
+    def breakdown_json(self) -> str:
+        return json.dumps(self.breakdown_m2, separators=(",", ":"))
 
 
 def _manual_review(image_path: str, message: str) -> EncroachmentResult:
     return EncroachmentResult(
         violation_flag=False,
         violation_type="Manual_Review",
-        setback_error=None,
+        total_area_m2=0.0,
+        breakdown_m2={c: 0.0 for c in ENCROACHMENT_CATEGORIES},
         image_evidence_path=image_path,
         notes=message,
         workflow_status="Under_Review",
@@ -230,30 +115,390 @@ def _parse_gps_string(gps: str | None) -> tuple[float, float] | None:
     return lat, lng
 
 
+def _meters_per_degree(lat: float) -> tuple[float, float]:
+    lat_rad = math.radians(lat)
+    m_per_deg_lat = 111_132.92 - 559.82 * math.cos(2 * lat_rad)
+    m_per_deg_lng = 111_412.84 * math.cos(lat_rad)
+    return m_per_deg_lat, max(m_per_deg_lng, 1e-6)
+
+
+@dataclass
+class _PixelProjector:
+    width_px: int
+    height_px: int
+    px_per_m: float
+    origin_lat: float
+    origin_lng: float
+    m_per_deg_lat: float
+    m_per_deg_lng: float
+
+    def project(self, geom: BaseGeometry) -> BaseGeometry:
+        """lon/lat → meters (centred on origin) → image pixels (origin top-left)."""
+        translated = translate(geom, xoff=-self.origin_lng, yoff=-self.origin_lat)
+        meters = scale(
+            translated,
+            xfact=self.m_per_deg_lng,
+            yfact=self.m_per_deg_lat,
+            origin=(0, 0),
+        )
+        # Pixel y axis points down; image y in meters points up → flip with negative scale.
+        pixels = scale(meters, xfact=self.px_per_m, yfact=-self.px_per_m, origin=(0, 0))
+        return translate(pixels, xoff=self.width_px / 2, yoff=self.height_px / 2)
+
+
+@dataclass
+class _SlicedBuilding:
+    raw_area_px: float
+    per_category_px: dict[str, float] = field(default_factory=dict)
+
+
+def _polygon_iter(geom: BaseGeometry) -> list[Polygon]:
+    if isinstance(geom, Polygon):
+        return [geom] if not geom.is_empty else []
+    if isinstance(geom, MultiPolygon):
+        return [p for p in geom.geoms if not p.is_empty]
+    return []
+
+
+def _safe_intersection(a: BaseGeometry, b: BaseGeometry) -> BaseGeometry | None:
+    try:
+        return a.intersection(b)
+    except Exception as e:  # shapely TopologyException etc.
+        logger.debug("Intersection failed: %s", e)
+        return None
+
+
+def _safe_difference(a: BaseGeometry, b: BaseGeometry) -> BaseGeometry | None:
+    try:
+        return a.difference(b)
+    except Exception as e:
+        logger.debug("Difference failed: %s", e)
+        return None
+
+
+def _build_road_buffer(
+    roads_px: list[LineString],
+    half_width_px: float,
+) -> BaseGeometry | None:
+    if not roads_px or half_width_px <= 0:
+        return None
+    buffers = []
+    for road in roads_px:
+        try:
+            buf = road.buffer(half_width_px, cap_style=2, join_style=2)
+            if not buf.is_empty:
+                buffers.append(buf)
+        except Exception as e:
+            logger.debug("Road buffer failed: %s", e)
+    if not buffers:
+        return None
+    try:
+        from shapely.ops import unary_union
+        return unary_union(buffers)
+    except Exception as e:
+        logger.debug("Road buffer union failed: %s", e)
+        return buffers[0]
+
+
+def _build_union(polys: list[Polygon]) -> BaseGeometry | None:
+    if not polys:
+        return None
+    try:
+        from shapely.ops import unary_union
+        return unary_union(polys)
+    except Exception as e:
+        logger.debug("Polygon union failed: %s", e)
+        return polys[0]
+
+
+def _classify_building(
+    building_px: Polygon,
+    layers_px: dict[str, BaseGeometry | None],
+) -> dict[str, list[Polygon]]:
+    """
+    Returns {category: [polygon_fragments]} so we can both measure and draw.
+    Categories are checked in priority order: road > public_space > water >
+    compliant (mapped) > unmapped (leftover).
+    """
+    categories: dict[str, list[Polygon]] = {c: [] for c in ENCROACHMENT_CATEGORIES}
+    remaining: BaseGeometry = building_px
+    if not isinstance(remaining, Polygon) or remaining.is_empty:
+        return categories
+
+    for cat in ("road", "public_space", "water", "compliant"):
+        layer = layers_px.get(cat)
+        if layer is None or remaining.is_empty:
+            continue
+        hit = _safe_intersection(remaining, layer)
+        if hit is None or hit.is_empty:
+            continue
+        for piece in _polygon_iter(hit):
+            if piece.area >= MIN_FRAGMENT_AREA_PX:
+                categories[cat].append(piece)
+        leftover = _safe_difference(remaining, layer)
+        if leftover is None:
+            break
+        remaining = leftover
+
+    if not remaining.is_empty:
+        for piece in _polygon_iter(remaining):
+            if piece.area >= MIN_FRAGMENT_AREA_PX:
+                categories["unmapped"].append(piece)
+
+    return categories
+
+
+def _aggregate_breakdown(
+    sliced: list[dict[str, list[Polygon]]],
+    px_to_m2: float,
+) -> dict[str, float]:
+    totals = {c: 0.0 for c in ENCROACHMENT_CATEGORIES}
+    for record in sliced:
+        for cat, pieces in record.items():
+            totals[cat] += sum(p.area for p in pieces) * px_to_m2
+    return {c: round(v, 1) for c, v in totals.items()}
+
+
+def _pick_violation_type(breakdown_m2: dict[str, float]) -> tuple[str | None, bool]:
+    """Pick the highest-area encroachment category as the headline violation."""
+    encroaching = {c: breakdown_m2.get(c, 0.0) for c in VIOLATION_TYPE_BY_CATEGORY}
+    if not any(v > 0 for v in encroaching.values()):
+        return None, False
+    top_cat = max(encroaching, key=lambda c: encroaching[c])
+    if encroaching[top_cat] <= 0:
+        return None, False
+    return VIOLATION_TYPE_BY_CATEGORY[top_cat], True
+
+
+def _open_aerial(image_path: str) -> Image.Image | None:
+    try:
+        with Image.open(image_path) as img:
+            return img.convert("RGB").copy()
+    except (FileNotFoundError, OSError) as e:
+        logger.warning("Cannot open aerial image %s: %s", image_path, e)
+        return None
+
+
+def _make_projector(
+    image_size_px: tuple[int, int],
+    lat: float,
+    lng: float,
+) -> _PixelProjector:
+    width_px, height_px = image_size_px
+    longer_px = max(width_px, height_px)
+    px_per_m = longer_px / float(settings.AI_ENCROACHMENT_IMAGE_SPAN_M)
+    m_per_deg_lat, m_per_deg_lng = _meters_per_degree(lat)
+    return _PixelProjector(
+        width_px=width_px,
+        height_px=height_px,
+        px_per_m=px_per_m,
+        origin_lat=lat,
+        origin_lng=lng,
+        m_per_deg_lat=m_per_deg_lat,
+        m_per_deg_lng=m_per_deg_lng,
+    )
+
+
+def _project_osm(
+    context: OSMContext,
+    projector: _PixelProjector,
+) -> dict[str, BaseGeometry | None]:
+    roads_px: list[LineString] = []
+    for road in context.roads:
+        projected = projector.project(road)
+        if isinstance(projected, LineString) and not projected.is_empty:
+            roads_px.append(projected)
+
+    def _project_polys(polys: list[Polygon]) -> list[Polygon]:
+        out: list[Polygon] = []
+        for poly in polys:
+            projected = projector.project(poly)
+            for p in _polygon_iter(projected):
+                if p.area >= MIN_FRAGMENT_AREA_PX:
+                    out.append(p)
+        return out
+
+    public_px = _project_polys(context.public_space)
+    water_px = _project_polys(context.water)
+    buildings_px = _project_polys(context.buildings)
+
+    half_width_px = settings.AI_ENCROACHMENT_ROAD_BUFFER_M * projector.px_per_m
+    return {
+        "road": _build_road_buffer(roads_px, half_width_px),
+        "public_space": _build_union(public_px),
+        "water": _build_union(water_px),
+        "compliant": _build_union(buildings_px),
+        "roads_lines": roads_px,
+    }
+
+
+def _render_polygon(
+    draw: ImageDraw.ImageDraw,
+    poly: Polygon,
+    color: tuple[int, int, int, int],
+) -> None:
+    if poly.is_empty:
+        return
+    outline = (color[0], color[1], color[2], 230)
+    coords = [(float(x), float(y)) for x, y in poly.exterior.coords]
+    if len(coords) >= 3:
+        draw.polygon(coords, fill=color, outline=outline)
+
+
+def _draw_legend(
+    draw: ImageDraw.ImageDraw,
+    canvas_size: tuple[int, int],
+    breakdown_m2: dict[str, float],
+) -> None:
+    width, _ = canvas_size
+    line_h = SWATCH_PX + 6
+    legend_w = 268
+    legend_h = LEGEND_PAD_PX * 2 + line_h * len(ENCROACHMENT_CATEGORIES) + 22
+    x0 = width - legend_w - 12
+    y0 = 12
+    draw.rectangle(
+        (x0, y0, x0 + legend_w, y0 + legend_h),
+        fill=(20, 20, 20, 220),
+        outline=(255, 255, 255, 160),
+    )
+    try:
+        font = ImageFont.load_default()
+    except OSError:
+        font = None
+    draw.text((x0 + LEGEND_PAD_PX, y0 + 8), "Encroachment classification", fill=(245, 245, 245, 255), font=font)
+
+    for i, cat in enumerate(ENCROACHMENT_CATEGORIES):
+        sw_y = y0 + 28 + i * line_h
+        color = CATEGORY_COLORS[cat]
+        draw.rectangle(
+            (x0 + LEGEND_PAD_PX, sw_y, x0 + LEGEND_PAD_PX + SWATCH_PX, sw_y + SWATCH_PX),
+            fill=color,
+            outline=(255, 255, 255, 220),
+        )
+        label = f"{CATEGORY_LABELS[cat]} ({breakdown_m2.get(cat, 0.0):.1f} m²)"
+        draw.text(
+            (x0 + LEGEND_PAD_PX + SWATCH_PX + 8, sw_y - 1),
+            label,
+            fill=(240, 240, 240, 255),
+            font=font,
+        )
+
+
+def _render_overlay(
+    base: Image.Image,
+    osm_px: dict[str, BaseGeometry | None],
+    sliced: list[dict[str, list[Polygon]]],
+    breakdown_m2: dict[str, float],
+) -> str:
+    overlay = base.copy().convert("RGBA")
+    canvas = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas, "RGBA")
+
+    # OSM context: roads stroked, public-space / water tinted softly underneath.
+    for cat in ("water", "public_space"):
+        layer = osm_px.get(cat)
+        if layer is None:
+            continue
+        tint = (*CATEGORY_COLORS[cat][:3], 50)
+        for poly in _polygon_iter(layer):
+            _render_polygon(draw, poly, tint)
+
+    roads_lines = osm_px.get("roads_lines") or []
+    for line in roads_lines:
+        if isinstance(line, LineString) and not line.is_empty:
+            pts = [(float(x), float(y)) for x, y in line.coords]
+            if len(pts) >= 2:
+                draw.line(pts, fill=(255, 255, 255, 200), width=2)
+
+    # Each YOLO building drawn in segments, color per category.
+    for record in sliced:
+        for cat, pieces in record.items():
+            color = CATEGORY_COLORS[cat]
+            for poly in pieces:
+                _render_polygon(draw, poly, color)
+
+    _draw_legend(draw, overlay.size, breakdown_m2)
+    composed = Image.alpha_composite(overlay, canvas).convert("RGB")
+
+    out_dir = Path(settings.UPLOAD_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    name = f"encroachment_{uuid4().hex}.jpg"
+    out_path = out_dir / name
+    composed.save(out_path, format="JPEG", quality=92)
+    return f"/uploads/{name}"
+
+
+def _summarize(breakdown_m2: dict[str, float], district: str) -> str:
+    parts = [
+        f"{CATEGORY_LABELS[c]}: {breakdown_m2.get(c, 0.0):.1f} m²"
+        for c in ENCROACHMENT_CATEGORIES
+        if breakdown_m2.get(c, 0.0) > 0
+    ]
+    if not parts:
+        return f"No encroachment detected against the OSM context near {district}."
+    return f"Encroachment screening for {district} — " + "; ".join(parts) + "."
+
+
 async def analyze_aerial_encroachment(
     image_path: str,
     district: str,
     gps_coords: str | None,
 ) -> EncroachmentResult:
-    """
-    Public entry point used by ai_service.process_aerial_image.
-
-    Requires GPS coords to fetch OSM context; reports without coords are routed
-    to manual review.
-    """
+    """Main entry point used by `ai_service.process_aerial_image`."""
     coords = _parse_gps_string(gps_coords)
     if coords is None:
         return _manual_review(
             image_path,
-            "Aerial submission missing GPS coordinates — routed to manual setback / encroachment review.",
+            "Aerial submission missing GPS coordinates — manual encroachment review required.",
         )
-
     lat, lng = coords
-    rules = get_district_rules(district)
-    required_setback_m = float(rules.get("min_setback_m", 0.0) or 0.0)
 
     try:
-        features = await fetch_nearby_features(lat, lng, radius_m=DEFAULT_SEARCH_RADIUS_M)
+        polygons_px, model_size = await asyncio.to_thread(detect_building_polygons, image_path)
+    except FileNotFoundError as e:
+        logger.warning("Encroachment model unavailable: %s", e)
+        return _manual_review(
+            image_path,
+            "Building segmenter weights not configured — manual encroachment review required.",
+        )
+    except Exception as e:
+        logger.exception("YOLO encroachment inference failed: %s", e)
+        return _manual_review(
+            image_path,
+            "Building segmenter failed on this aerial image — manual encroachment review required.",
+        )
+
+    base_image = _open_aerial(image_path)
+    if base_image is None:
+        return _manual_review(
+            image_path,
+            "Aerial image could not be opened — manual encroachment review required.",
+        )
+
+    image_size = model_size if model_size != (0, 0) else base_image.size
+    if image_size[0] <= 0 or image_size[1] <= 0:
+        image_size = base_image.size
+    if base_image.size != image_size:
+        base_image = base_image.resize(image_size)
+
+    if not polygons_px:
+        evidence_path = _annotated_empty(base_image, district)
+        return EncroachmentResult(
+            violation_flag=False,
+            violation_type=None,
+            total_area_m2=0.0,
+            breakdown_m2={c: 0.0 for c in ENCROACHMENT_CATEGORIES},
+            image_evidence_path=evidence_path,
+            notes=(
+                f"Building segmenter found no candidate footprints in this aerial submission for {district}."
+            ),
+        )
+
+    projector = _make_projector(image_size, lat, lng)
+    half_span_m = settings.AI_ENCROACHMENT_IMAGE_SPAN_M / 2.0
+
+    try:
+        osm_context = await fetch_osm_context(lat, lng, half_span_m)
     except (httpx.HTTPError, ValueError, RuntimeError) as e:
         logger.warning("Overpass fetch failed for (%s, %s): %s", lat, lng, e)
         return _manual_review(
@@ -261,66 +506,33 @@ async def analyze_aerial_encroachment(
             "OpenStreetMap context unavailable — aerial report routed to manual encroachment review.",
         )
 
-    buildings = features.get("buildings") or []
-    roads = features.get("roads") or []
-    if not buildings:
-        return _manual_review(
-            image_path,
-            "No OSM building footprint near submission GPS — manual encroachment review required.",
-        )
+    osm_px = _project_osm(osm_context, projector)
+    sliced = [_classify_building(poly, osm_px) for poly in polygons_px]
+    px_to_m2 = 1.0 / (projector.px_per_m ** 2)
+    breakdown = _aggregate_breakdown(sliced, px_to_m2)
+    total = round(sum(breakdown.values()), 1)
+    headline, flag = _pick_violation_type(breakdown)
 
-    picked = _pick_target_building(buildings, lat, lng)
-    if picked is None:
-        return _manual_review(
-            image_path,
-            "Could not project nearby OSM buildings — manual encroachment review required.",
-        )
-    target_lonlat, target_m = picked
-
-    roads_m = [
-        line for line in (_project_to_meters(r, lat, lng) for r in roads)
-        if isinstance(line, LineString)
-    ]
-
-    deficit = _measure_encroachment(target_m, roads_m, required_setback_m)
-    evidence_path = _annotate_aerial(
-        image_path,
-        target_lonlat,
-        roads,
-        lat,
-        lng,
-        required_setback_m,
-    )
-
-    if deficit > MIN_BUILDING_OVERLAP_M:
-        rounded = round(deficit, 2)
-        return EncroachmentResult(
-            violation_flag=True,
-            violation_type="Encroachment",
-            setback_error=rounded,
-            image_evidence_path=evidence_path,
-            notes=(
-                f"Building footprint extends {rounded}m into the required "
-                f"{required_setback_m:.1f}m setback from the nearest road in {district}."
-            ),
-        )
+    evidence_path = _render_overlay(base_image, osm_px, sliced, breakdown)
 
     return EncroachmentResult(
-        violation_flag=False,
-        violation_type=None,
-        setback_error=0.0,
+        violation_flag=flag,
+        violation_type=headline,
+        total_area_m2=total,
+        breakdown_m2=breakdown,
         image_evidence_path=evidence_path,
-        notes=(
-            f"Aerial review found no encroachment past the {required_setback_m:.1f}m "
-            f"setback for {district}."
-        ),
+        notes=_summarize(breakdown, district),
     )
 
 
-def analyze_aerial_encroachment_sync(
-    image_path: str,
-    district: str,
-    gps_coords: str | None,
-) -> EncroachmentResult:
-    """Synchronous helper for callers outside async contexts (tests, scripts)."""
-    return asyncio.run(analyze_aerial_encroachment(image_path, district, gps_coords))
+def _annotated_empty(base_image: Image.Image, district: str) -> str:
+    canvas = base_image.copy().convert("RGBA")
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    _draw_legend(draw, canvas.size, {c: 0.0 for c in ENCROACHMENT_CATEGORIES})
+    composed = canvas.convert("RGB")
+    out_dir = Path(settings.UPLOAD_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    name = f"encroachment_{uuid4().hex}.jpg"
+    out_path = out_dir / name
+    composed.save(out_path, format="JPEG", quality=92)
+    return f"/uploads/{name}"

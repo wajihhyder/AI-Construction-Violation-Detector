@@ -141,17 +141,20 @@ async def process_aerial_image(
     gps_coords: str | None = None,
 ) -> dict:
     """
-    Aerial images are screened for road / setback encroachment using OSM
-    footprints; reports without usable context are routed to manual review.
+    Aerial submissions are run through the YOLO building segmenter and the OSM
+    context layer (roads / public-space / water / mapped buildings). The result
+    carries a per-category area breakdown and a color-coded evidence overlay.
     """
     result = await analyze_aerial_encroachment(image_path, district, gps_coords)
     payload: dict = {
         "violation_flag": result.violation_flag,
         "violation_type": result.violation_type,
         "detected_floors": None,
-        "setback_error": result.setback_error,
+        "setback_error": None,
         "image_evidence_path": result.image_evidence_path,
         "notes": result.notes,
+        "encroachment_total_m2": result.total_area_m2,
+        "encroachment_breakdown": result.breakdown_json(),
     }
     if result.workflow_status:
         payload["workflow_status"] = result.workflow_status

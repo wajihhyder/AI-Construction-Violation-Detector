@@ -142,6 +142,25 @@ def _ensure_user_role_columns() -> None:
 _ensure_user_role_columns()
 
 
+def _ensure_encroachment_columns() -> None:
+    """Add encroachment breakdown columns if missing (create_all skips ALTERs)."""
+    try:
+        insp = inspect(engine)
+        if "ai_analysis_result" not in insp.get_table_names():
+            return
+        names = {c["name"] for c in insp.get_columns("ai_analysis_result")}
+        with engine.begin() as conn:
+            if "encroachment_total_m2" not in names:
+                conn.execute(text("ALTER TABLE ai_analysis_result ADD COLUMN encroachment_total_m2 FLOAT"))
+            if "encroachment_breakdown" not in names:
+                conn.execute(text("ALTER TABLE ai_analysis_result ADD COLUMN encroachment_breakdown TEXT"))
+    except Exception as e:
+        logger.warning("Schema ensure encroachment columns: %s", e)
+
+
+_ensure_encroachment_columns()
+
+
 def _ensure_indexes() -> None:
     """Add common lookup indexes used by dashboards and scoped authority filters."""
     try:

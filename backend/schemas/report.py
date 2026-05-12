@@ -1,6 +1,7 @@
 from datetime import datetime
+import json
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AIResultPublic(BaseModel):
@@ -10,8 +11,25 @@ class AIResultPublic(BaseModel):
     setback_error: float | None
     gps_coords: str
     image_evidence_path: str
+    encroachment_total_m2: float | None = None
+    encroachment_breakdown: dict[str, float] | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("encroachment_breakdown", mode="before")
+    @classmethod
+    def _parse_breakdown(cls, value):
+        if value is None or value == "":
+            return None
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                return None
+            return parsed if isinstance(parsed, dict) else None
+        return None
 
 
 class CitizenReportSubmitResponse(BaseModel):

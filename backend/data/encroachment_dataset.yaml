@@ -1,0 +1,26 @@
+# Roboflow dataset used to train the satellite-imagery building segmenter
+# that the encroachment service consumes. Train with Ultralytics YOLO and
+# point AI_ENCROACHMENT_MODEL_PATH at the resulting weights.
+#
+# Quick start (segmentation):
+#   pip install ultralytics roboflow
+#   yolo task=segment mode=train model=yolov8n-seg.pt data=encroachment_dataset.yaml \
+#        epochs=80 imgsz=640
+#   cp runs/segment/train/weights/best.pt ../best_encroachment.pt
+#
+# The service also accepts a bounding-box detector (task=detect); polygons are
+# then approximated as rectangles around each box.
+
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['Buildings']
+
+roboflow:
+  workspace: encroachment
+  project: encroachment-dwic8
+  version: 31
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/encroachment/encroachment-dwic8/dataset/31
