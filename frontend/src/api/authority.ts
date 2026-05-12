@@ -41,12 +41,12 @@ export async function fetchReportNoticeHtml(reportId: number): Promise<string> {
 }
 
 /** Trigger a browser download of the screening report as an HTML file (no pop-up). */
-export function downloadReportNoticeHtml(reportId: number, html: string) {
+export function downloadReportNoticeHtml(reportId: number, html: string, trackingId?: string) {
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `construction-violation-report-${String(reportId).padStart(5, '0')}.html`
+  a.download = `${trackingId?.trim() || `VS-REPORT-${String(reportId).padStart(5, '0')}`}.html`
   a.rel = 'noopener'
   document.body.appendChild(a)
   a.click()

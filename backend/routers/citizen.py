@@ -70,7 +70,16 @@ async def run_ai_analysis(
         db.flush()
 
         report.ai_result_id = ai_row.result_id
-        report.status = "New"
+        workflow_status = result.get("workflow_status")
+        if isinstance(workflow_status, str) and workflow_status:
+            report.status = workflow_status
+        elif bool(result.get("violation_flag")):
+            report.status = "New"
+        else:
+            report.status = "Closed_No_Violation"
+        notes = result.get("notes")
+        if isinstance(notes, str):
+            report.notes = notes[:500]
         db.commit()
     except Exception as e:
         logger.exception("AI analysis failed for report %s: %s", report_id, e)
@@ -96,6 +105,7 @@ def _report_to_poll(r: ViolationsReport) -> CitizenReportPollResponse:
         input_type=r.input_type,
         submission_date=r.submission_date,
         reporter_type=r.reporter_type,
+        notes=r.notes,
         ai_result=ai,
     )
 

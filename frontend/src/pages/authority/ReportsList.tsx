@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -9,6 +9,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  Rectangle,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -20,12 +21,68 @@ import { ReportCard } from '../../components/shared/ReportCard'
 import { StatCard } from '../../components/shared/StatCard'
 import { Select } from '../../components/ui/Select'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { useAuthStore } from '../../store/authStore'
 import type { AuthorityReportItem } from '../../types/report'
 import { KARACHI_AREA_LABELS } from '../../constants/karachiAreas'
 
-const COLORS = ['#ffffff', '#cccccc', '#888888', '#555555', '#333333', '#1a1a1a']
+const VIOLATION_COLORS = ['#ffffff', '#d4d4d8', '#a1a1aa', '#71717a', '#52525b', '#3f3f46']
+const STATUS_COLORS: Record<string, string> = {
+  New: '#ffffff',
+  Under_Review: '#d4d4d8',
+  Verified: '#a1a1aa',
+  Invalid: '#71717a',
+  Processing: '#52525b',
+}
+
+function formatChartLabel(value: string) {
+  return value.replace(/_/g, ' ')
+}
+
+function formatShortDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function EmptyChartState({ message }: { message: string }) {
+  return (
+    <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-[#333] bg-[#0a0a0a] text-sm text-[#888]">
+      {message}
+    </div>
+  )
+}
+
+type ActiveStatusBarProps = {
+  fill?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+}
+
+function ActiveStatusBar({
+  fill = '#ffffff',
+  x = 0,
+  y = 0,
+  width = 0,
+  height = 0,
+}: ActiveStatusBarProps) {
+  if (width <= 0 || height <= 0) return null
+
+  return (
+    <Rectangle
+      x={x - 2}
+      y={y - 6}
+      width={width + 4}
+      height={height + 6}
+      fill={fill}
+      radius={[10, 10, 0, 0]}
+    />
+  )
+}
 
 export function ReportsList() {
+  const user = useAuthStore((s) => s.user)
   const [items, setItems] = useState<AuthorityReportItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -42,6 +99,11 @@ export function ReportsList() {
   const [timeline, setTimeline] = useState<{ date: string; count: number }[]>([])
 
   const limit = 20
+  const scopedArea = user?.roleName === 'AUTHORITY' ? user.assignedArea : null
+  const districtOptions = useMemo(
+    () => (scopedArea ? [scopedArea] : KARACHI_AREA_LABELS),
+    [scopedArea],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -68,22 +130,51 @@ export function ReportsList() {
   }, [page, statusFilter, districtFilter, inputFilter])
 
   useEffect(() => {
-    fetchStats().then(setStats).catch(() => setStats(null))
-    fetchTimeline()
-      .then((t) => setTimeline(t.series))
-      .catch(() => setTimeline([]))
+    Promise.all([fetchStats(), fetchTimeline()])
+      .then(([statsData, timelineData]) => {
+        setStats(statsData)
+        setTimeline(timelineData.series)
+      })
+      .catch(() => {
+        setStats(null)
+        setTimeline([])
+      })
   }, [])
 
-  const pieData = stats
-    ? Object.entries(stats.by_violation_type).map(([name, value]) => ({ name, value }))
-    : []
+  const pieData = useMemo(
+    () =>
+      stats
+        ? Object.entries(stats.by_violation_type)
+            .map(([name, value]) => ({ name, value }))
+            .filter((entry) => entry.value > 0)
+            .sort((a, b) => b.value - a.value)
+        : [],
+    [stats],
+  )
+  const statusData = useMemo(
+    () =>
+      stats
+        ? Object.entries(stats.by_status)
+            .map(([name, value]) => ({ name, value }))
+            .filter((entry) => entry.value > 0)
+            .sort((a, b) => b.value - a.value)
+        : [],
+    [stats],
+  )
+  const totalViolationReports = pieData.reduce((sum, entry) => sum + entry.value, 0)
+  const chartCardClass =
+    'rounded-[var(--radius-lg)] border border-[#333] bg-[#111] p-5'
 
   const totalPages = Math.max(1, Math.ceil(total / limit))
 
   return (
     <div className="p-6 lg:p-8">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
-      <p className="mt-1 text-sm text-[#888]">Overview and all violation reports</p>
+      <p className="mt-1 text-sm text-[#888]">
+        {scopedArea
+          ? `Violation reports for your assigned area: ${scopedArea}`
+          : 'Overview of recorded violation reports'}
+      </p>
 
       {stats && (
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -94,73 +185,198 @@ export function ReportsList() {
             accent="yellow"
           />
           <StatCard
-            title="Verified"
-            value={stats.by_status['Verified'] ?? 0}
-            accent="green"
+            title="Under Review"
+            value={stats.by_status['Under_Review'] ?? 0}
+            accent="yellow"
           />
-          <StatCard title="Compliant (AI)" value={stats.compliant} accent="green" />
+          <StatCard title="Verified" value={stats.by_status['Verified'] ?? 0} accent="green" />
         </div>
       )}
 
       <div className="mt-10 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-[var(--radius-lg)] border border-[#333] bg-[#111] p-4">
-          <h2 className="mb-4 text-sm font-medium text-[#888]">Reports by violation type</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  label
-                >
-                  {pieData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+        <div className={chartCardClass}>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">Reports by violation type</h2>
+              <p className="mt-1 text-xs text-[#888]">Breakdown of detected case categories</p>
+            </div>
+            <span className="rounded-full border border-[#333] bg-[#0a0a0a] px-3 py-1 text-xs font-medium text-white">
+              {totalViolationReports} total
+            </span>
+          </div>
+          <div className="h-72">
+            {pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="48%"
+                    innerRadius={58}
+                    outerRadius={92}
+                    paddingAngle={3}
+                    labelLine={false}
+                    stroke="#111111"
+                    strokeWidth={3}
+                  >
+                    {pieData.map((entry, i) => (
+                      <Cell key={entry.name} fill={VIOLATION_COLORS[i % VIOLATION_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <text
+                    x="50%"
+                    y="44%"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="#888888"
+                    className="text-[13px] font-medium"
+                  >
+                    Violation mix
+                  </text>
+                  <text
+                    x="50%"
+                    y="53%"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="#ffffff"
+                    className="text-[26px] font-semibold"
+                  >
+                    {totalViolationReports}
+                  </text>
+                  <Tooltip
+                    formatter={(value, name) => [`${value} reports`, formatChartLabel(String(name))]}
+                    contentStyle={{
+                      borderRadius: 14,
+                      border: '1px solid #333333',
+                      backgroundColor: '#111111',
+                      color: '#ffffff',
+                    }}
+                    itemStyle={{ color: '#ffffff' }}
+                    labelStyle={{ color: '#888888' }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    iconType="circle"
+                    formatter={(value) => formatChartLabel(String(value))}
+                    wrapperStyle={{ color: '#dddddd', fontSize: '12px', paddingTop: '12px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyChartState message="No violations recorded yet." />
+            )}
           </div>
         </div>
-        <div className="rounded-[var(--radius-lg)] border border-[#333] bg-[#111] p-4">
-          <h2 className="mb-4 text-sm font-medium text-[#888]">Submissions (30 days)</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timeline}>
-                <CartesianGrid stroke="#222" />
-                <XAxis dataKey="date" tick={{ fill: '#555', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#555', fontSize: 10 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="count" stroke="#ffffff" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+        <div className={chartCardClass}>
+          <div className="mb-4">
+            <h2 className="text-sm font-semibold text-white">Submissions (30 days)</h2>
+            <p className="mt-1 text-xs text-[#888]">Daily report volume for the past month</p>
+          </div>
+          <div className="h-72">
+            {timeline.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={timeline.map((entry) => ({ ...entry, label: formatShortDate(entry.date) }))}
+                  margin={{ top: 12, right: 10, left: -18, bottom: 4 }}
+                >
+                  <CartesianGrid stroke="#222222" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fill: '#888888', fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#333333' }}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fill: '#888888', fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value) => [`${value} submissions`, 'Reports']}
+                    contentStyle={{
+                      borderRadius: 14,
+                      border: '1px solid #333333',
+                      backgroundColor: '#111111',
+                      color: '#ffffff',
+                    }}
+                    itemStyle={{ color: '#ffffff' }}
+                    labelStyle={{ color: '#888888' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    stroke="#ffffff"
+                    strokeWidth={3}
+                    dot={{ r: 3, strokeWidth: 2, stroke: '#ffffff', fill: '#111111' }}
+                    activeDot={{ r: 5, strokeWidth: 0, fill: '#ffffff' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyChartState message="No submissions in the selected time range." />
+            )}
           </div>
         </div>
       </div>
 
-      <div className="mt-10 rounded-[var(--radius-lg)] border border-[#333] bg-[#111] p-4">
-        <h2 className="mb-4 text-sm font-medium text-[#888]">Status distribution</h2>
-        <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={
-                stats
-                  ? Object.entries(stats.by_status).map(([name, value]) => ({ name, value }))
-                  : []
-              }
-            >
-              <CartesianGrid stroke="#222" />
-              <XAxis dataKey="name" tick={{ fill: '#888', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#888', fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#ffffff" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <div className={`mt-10 ${chartCardClass}`}>
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-white">Status distribution</h2>
+          <p className="mt-1 text-xs text-[#888]">Current workflow stage of reported cases</p>
+        </div>
+        <div className="h-64">
+          {statusData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={statusData} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="#222222" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tickFormatter={formatChartLabel}
+                  tick={{ fill: '#888888', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#333333' }}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fill: '#888888', fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  formatter={(value, name) => [`${value} reports`, formatChartLabel(String(name))]}
+                  labelFormatter={(label) => formatChartLabel(String(label))}
+                  cursor={false}
+                  contentStyle={{
+                    borderRadius: 14,
+                    border: '1px solid #333333',
+                    backgroundColor: '#111111',
+                    color: '#ffffff',
+                  }}
+                  itemStyle={{ color: '#ffffff' }}
+                  labelStyle={{ color: '#888888' }}
+                />
+                <Bar
+                  dataKey="value"
+                  radius={[10, 10, 0, 0]}
+                  maxBarSize={72}
+                  activeBar={(props) => <ActiveStatusBar {...props} />}
+                >
+                  {statusData.map((entry) => (
+                    <Cell
+                      key={entry.name}
+                      fill={STATUS_COLORS[entry.name] ?? VIOLATION_COLORS[0]}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyChartState message="No status data available yet." />
+          )}
         </div>
       </div>
 
@@ -183,20 +399,22 @@ export function ReportsList() {
             }}
           />
         </div>
-        <div className="min-w-[180px]">
-          <Select
-            label="District"
-            options={[
-              { value: 'All', label: 'All districts' },
-              ...KARACHI_AREA_LABELS.map((d) => ({ value: d, label: d })),
-            ]}
-            value={districtFilter}
-            onChange={(e) => {
-              setPage(1)
-              setDistrictFilter(e.target.value)
-            }}
-          />
-        </div>
+        {!scopedArea && (
+          <div className="min-w-[180px]">
+            <Select
+              label="District"
+              options={[
+                { value: 'All', label: 'All districts' },
+                ...districtOptions.map((d) => ({ value: d, label: d })),
+              ]}
+              value={districtFilter}
+              onChange={(e) => {
+                setPage(1)
+                setDistrictFilter(e.target.value)
+              }}
+            />
+          </div>
+        )}
         <div className="min-w-[160px]">
           <Select
             label="Image type"

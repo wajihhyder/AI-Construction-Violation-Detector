@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/authStore'
 
 export function Navbar() {
   const { user, logout } = useAuthStore()
+  const isAdmin = user?.roleName ? user.roleName === 'ADMIN' : Boolean(user?.role)
 
   return (
     <header className="border-b border-[#222] bg-black/80 backdrop-blur">
@@ -29,12 +30,12 @@ export function Navbar() {
               </Button>
             </Link>
           )}
-          {user && !user.role && (
+          {user && !isAdmin && (
             <Link to="/authority/reports" className="text-sm text-[#888] hover:text-white">
               Dashboard
             </Link>
           )}
-          {user && user.role && (
+          {user && isAdmin && (
             <>
               <Link to="/authority/reports" className="text-sm text-[#888] hover:text-white">
                 Authority

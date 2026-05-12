@@ -11,6 +11,14 @@ const linkCls = ({ isActive }: { isActive: boolean }) =>
 
 export function Sidebar({ variant }: { variant: 'authority' | 'admin' }) {
   const { user, logout } = useAuthStore()
+  const roleLabel =
+    user?.roleName === 'ADMIN'
+      ? 'Admin'
+      : user?.roleName === 'DG'
+        ? 'Director General'
+        : user?.role
+          ? 'Admin'
+          : 'Authority'
 
   return (
     <aside className="flex h-full w-56 flex-col border-r border-[#222] bg-[#0a0a0a] p-4">
@@ -37,6 +45,10 @@ export function Sidebar({ variant }: { variant: 'authority' | 'admin' }) {
           <User size={14} />
           <span className="truncate">{user?.username}</span>
         </div>
+        <div className="mb-1 truncate text-[#666]">{roleLabel}</div>
+        {user?.assignedArea && variant === 'authority' && (
+          <div className="mb-3 truncate text-[#666]">{user.assignedArea}</div>
+        )}
         <button
           type="button"
           className="flex items-center gap-2 text-sm text-[#888] hover:text-white"

@@ -15,6 +15,12 @@ import { Modal } from '../../components/ui/Modal'
 import { CreateUser } from './CreateUser'
 import { EditUser } from './EditUser'
 
+function roleLabel(roleName: AdminUser['role_name']) {
+  if (roleName === 'ADMIN') return 'Admin'
+  if (roleName === 'DG') return 'Director General'
+  return 'Authority'
+}
+
 export function UsersList() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,24 +53,27 @@ export function UsersList() {
     }
   }
 
+  const existingRoles = users.map((u) => u.role_name)
+
   return (
     <div className="p-6 lg:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Users</h1>
-          <p className="text-sm text-[#888]">Authority and admin accounts</p>
+          <p className="text-sm text-[#888]">Authority, DG, and admin accounts</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>Add New User</Button>
       </div>
 
       <div className="mt-8 overflow-x-auto rounded-[var(--radius-lg)] border border-[#333]">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="border-b border-[#222] bg-[#0a0a0a] text-xs uppercase text-[#555]">
             <tr>
               <th className="px-4 py-3">ID</th>
               <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Assigned area</th>
               <th className="px-4 py-3">Last login</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -72,35 +81,42 @@ export function UsersList() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-[#555]">
+                <td colSpan={7} className="px-4 py-8 text-center text-[#555]">
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-[#555]">
+                <td colSpan={7} className="px-4 py-12 text-center text-[#555]">
                   No users found.
                 </td>
               </tr>
             )}
             {!loading &&
-              users.map((u) => (
-                <tr key={u.id} className="border-b border-[#222] hover:bg-[#0a0a0a]/80">
+              users.map((u) => {
+                const protectedUser = u.role_name === 'ADMIN' || u.role_name === 'DG'
+                return (
+                  <tr key={u.id} className="border-b border-[#222] hover:bg-[#0a0a0a]/80">
                   <td className="px-4 py-3 font-mono">{u.id}</td>
                   <td className="px-4 py-3">{u.username}</td>
                   <td className="px-4 py-3 text-[#888]">{u.email}</td>
                   <td className="px-4 py-3">
-                    {u.role ? (
+                    {u.role_name === 'ADMIN' ? (
                       <span className="rounded-full border border-white/35 bg-white/10 px-2 py-0.5 text-xs text-white">
-                        Admin
+                        {roleLabel(u.role_name)}
+                      </span>
+                    ) : u.role_name === 'DG' ? (
+                      <span className="rounded-full border border-[#777]/45 bg-[#777]/10 px-2 py-0.5 text-xs text-[#ddd]">
+                        {roleLabel(u.role_name)}
                       </span>
                     ) : (
                       <span className="rounded-full border border-[#333] px-2 py-0.5 text-xs text-[#888]">
-                        Authority
+                        {roleLabel(u.role_name)}
                       </span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-[#888]">{u.assigned_area ?? 'All areas'}</td>
                   <td className="px-4 py-3 text-[#888]">
                     {u.last_login ? format(new Date(u.last_login), 'PPp') : '—'}
                   </td>
@@ -115,21 +131,24 @@ export function UsersList() {
                     </button>
                     <button
                       type="button"
-                      className="inline-flex text-[#888] hover:text-white"
-                      aria-label="Delete"
+                      className="inline-flex text-[#888] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={protectedUser ? 'Protected user cannot be deleted' : 'Delete'}
+                      disabled={protectedUser}
                       onClick={() => setDeleteId(u.id)}
                     >
                       <Trash2 size={18} />
                     </button>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                )
+              })}
           </tbody>
         </table>
       </div>
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create user">
         <CreateUser
+          existingRoles={existingRoles}
           onCancel={() => setCreateOpen(false)}
           onCreated={() => {
             setCreateOpen(false)

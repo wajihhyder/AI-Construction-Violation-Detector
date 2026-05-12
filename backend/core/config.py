@@ -26,6 +26,9 @@ class Settings(BaseSettings):
 
     UPLOAD_DIR: str = "./uploads"
     MAX_FILE_SIZE_MB: int = 10
+    AI_STREET_MODEL_PATH: str = "../best_floor.pt"
+    AI_STREET_MODEL_CONFIDENCE: float = 0.25
+    AI_DEVICE: str = "cpu"
 
     FRONTEND_URL: str = "http://localhost:5173"
 
@@ -65,6 +68,12 @@ class Settings(BaseSettings):
         if (p / "index.html").exists():
             return p.resolve()
         return None
+
+    def resolved_ai_street_model_path(self) -> Path:
+        p = Path(self.AI_STREET_MODEL_PATH)
+        if not p.is_absolute():
+            p = _base_dir() / p
+        return p.resolve()
 
     def cors_origins(self) -> list[str]:
         u = self.FRONTEND_URL.rstrip("/")

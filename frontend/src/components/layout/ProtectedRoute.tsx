@@ -9,7 +9,8 @@ export function ProtectedRoute({ adminOnly }: Props) {
   if (!token || !user) {
     return <Navigate to="/login" replace />
   }
-  if (adminOnly && !user.role) {
+  const isAdmin = user.roleName ? user.roleName === 'ADMIN' : user.role
+  if (adminOnly && !isAdmin) {
     return <Navigate to="/authority/reports" replace />
   }
   return <Outlet />

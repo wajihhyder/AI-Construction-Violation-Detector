@@ -50,27 +50,56 @@ def _parse_gps(coords: str | None) -> tuple[float, float] | None:
         return None
 
 
+def _scoped_reports_query(db: Session, current_user: User):
+    """Apply authority area scoping without hiding reports by workflow state or AI outcome."""
+    q = db.query(ViolationsReport).options(joinedload(ViolationsReport.ai_result))
+    if current_user.can_view_all_areas:
+        return q
+    assigned_area = (current_user.assigned_area or "").strip()
+    if not assigned_area:
+        return q.filter(ViolationsReport.report_id == -1)
+    return q.filter(ViolationsReport.district_location == assigned_area)
+
+
+def _scoped_report_or_404(db: Session, current_user: User, report_id: int) -> ViolationsReport:
+    report = (
+        _scoped_reports_query(db, current_user)
+        .filter(ViolationsReport.report_id == report_id)
+        .first()
+    )
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Report not found", "code": "NOT_FOUND"},
+        )
+    return report
+
+
 @router.get("/reports/stats", response_model=StatsResponse)
 async def reports_stats(
     db: Session = Depends(get_db),
-    _: User = Depends(require_authority),
+    current_user: User = Depends(require_authority),
 ):
-    rows = db.query(ViolationsReport).all()
+    rows = _scoped_reports_query(db, current_user).all()
     total = len(rows)
     by_status: dict[str, int] = {}
     for r in rows:
         by_status[r.status] = by_status.get(r.status, 0) + 1
 
-    by_violation_type: dict[str, int] = {"Extra_Floor": 0, "Setback_Breach": 0, "Encroachment": 0}
+    by_violation_type: dict[str, int] = {
+        "Extra_Floor": 0,
+        "Setback_Breach": 0,
+        "Encroachment": 0,
+        "Manual_Review": 0,
+    }
     compliant = 0
     for r in rows:
         if r.ai_result:
-            if not r.ai_result.violation_flag:
+            if not r.ai_result.violation_flag and r.ai_result.violation_type != "Manual_Review":
                 compliant += 1
-            if r.ai_result.violation_flag:
-                vt = r.ai_result.violation_type
-                if vt and vt in by_violation_type:
-                    by_violation_type[vt] += 1
+            vt = r.ai_result.violation_type
+            if vt and vt in by_violation_type and (r.ai_result.violation_flag or vt == "Manual_Review"):
+                by_violation_type[vt] += 1
 
     return StatsResponse(
         total=total,
@@ -83,15 +112,10 @@ async def reports_stats(
 @router.get("/reports/map", response_model=list[MapReportPin])
 async def reports_map(
     db: Session = Depends(get_db),
-    _: User = Depends(require_authority),
+    current_user: User = Depends(require_authority),
 ):
     """All reports that have a usable lat/lng (AI result GPS, else GPS captured at submit)."""
-    rows = (
-        db.query(ViolationsReport)
-        .options(joinedload(ViolationsReport.ai_result))
-        .order_by(ViolationsReport.report_id.desc())
-        .all()
-    )
+    rows = _scoped_reports_query(db, current_user).order_by(ViolationsReport.report_id.desc()).all()
     out: list[MapReportPin] = []
     for r in rows:
         parsed = None
@@ -121,12 +145,12 @@ async def reports_map(
 @router.get("/reports/timeline")
 async def reports_timeline(
     db: Session = Depends(get_db),
-    _: User = Depends(require_authority),
+    current_user: User = Depends(require_authority),
 ):
     """Reports submitted per day for last 30 days."""
     end_d = datetime.utcnow().date()
     start_d = end_d - timedelta(days=29)
-    rows = db.query(ViolationsReport).all()
+    rows = _scoped_reports_query(db, current_user).all()
 
     counts: defaultdict[str, int] = defaultdict(int)
     for r in rows:
@@ -150,21 +174,11 @@ async def report_notice_html(
     request: Request,
     report_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_authority),
+    current_user: User = Depends(require_authority),
 ):
     """Printable / downloadable structured authority screening report (HTML for print or save)."""
-    r = (
-        db.query(ViolationsReport)
-        .options(joinedload(ViolationsReport.ai_result))
-        .filter(ViolationsReport.report_id == report_id)
-        .first()
-    )
-    if not r:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Report not found", "code": "NOT_FOUND"},
-        )
-    ctx = build_authority_report_context(r, settings)
+    r = _scoped_report_or_404(db, current_user, report_id)
+    ctx = build_authority_report_context(r, settings, str(request.base_url))
     return _notice_templates.TemplateResponse(
         "authority_report.html",
         {"request": request, **ctx},
@@ -174,14 +188,14 @@ async def report_notice_html(
 @router.get("/reports", response_model=PaginatedReports)
 async def list_reports(
     db: Session = Depends(get_db),
-    _: User = Depends(require_authority),
+    current_user: User = Depends(require_authority),
     status_filter: str | None = Query(None, alias="status"),
     district: str | None = Query(None),
     input_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
 ):
-    q = db.query(ViolationsReport)
+    q = _scoped_reports_query(db, current_user)
     if status_filter and status_filter != "All":
         q = q.filter(ViolationsReport.status == status_filter)
     if district and district != "All":
@@ -219,17 +233,13 @@ async def list_reports(
 async def get_report_detail(
     report_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_authority),
+    current_user: User = Depends(require_authority),
 ):
-    r = db.query(ViolationsReport).filter(ViolationsReport.report_id == report_id).first()
-    if not r:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Report not found", "code": "NOT_FOUND"},
-        )
+    r = _scoped_report_or_404(db, current_user, report_id)
     ai = AIResultPublic.model_validate(r.ai_result) if r.ai_result else None
     return AuthorityReportDetail(
         report_id=r.report_id,
+        tracking_id=r.tracking_id,
         submission_date=r.submission_date,
         district_location=r.district_location,
         input_type=r.input_type,
@@ -247,12 +257,7 @@ async def patch_report_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_authority),
 ):
-    r = db.query(ViolationsReport).filter(ViolationsReport.report_id == report_id).first()
-    if not r:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"detail": "Report not found", "code": "NOT_FOUND"},
-        )
+    r = _scoped_report_or_404(db, current_user, report_id)
     new_status = body.status
     key = (r.status, new_status)
     if key not in ALLOWED_TRANSITIONS:
@@ -269,5 +274,8 @@ async def patch_report_status(
 
 
 @router.get("/districts")
-async def authority_districts(_: User = Depends(require_authority)):
-    return {"districts": KARACHI_DISTRICTS}
+async def authority_districts(current_user: User = Depends(require_authority)):
+    if current_user.can_view_all_areas:
+        return {"districts": KARACHI_DISTRICTS}
+    assigned_area = (current_user.assigned_area or "").strip()
+    return {"districts": [assigned_area] if assigned_area else []}

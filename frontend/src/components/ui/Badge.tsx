@@ -6,6 +6,7 @@ const STATUS_MAP: Record<string, string> = {
   Under_Review: 'bg-[#666]/30 text-[#ddd] border-[#888]/50',
   Verified: 'bg-white/10 text-white border-white/30',
   Invalid: 'bg-black/40 text-[#aaa] border-[#555]',
+  Closed_No_Violation: 'bg-[#1f1f1f] text-[#cfcfcf] border-[#4a4a4a]',
 }
 
 type Props = { children: React.ReactNode; status?: string; className?: string }

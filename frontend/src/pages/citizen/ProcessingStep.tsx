@@ -28,7 +28,7 @@ export function ProcessingStep({ reportId, trackingId, onDone }: Props) {
       try {
         const data = await pollReport(reportId)
         if (cancelled) return
-        if (data.ai_result) {
+        if (data.ai_result || data.status !== 'Processing') {
           cancelled = true
           onDoneRef.current(data)
           return

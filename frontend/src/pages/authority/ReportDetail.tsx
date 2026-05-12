@@ -19,6 +19,7 @@ import { Spinner } from '../../components/ui/Spinner'
 
 type Detail = {
   report_id: number
+  tracking_id: string
   submission_date: string
   district_location: string
   input_type: boolean | null
@@ -99,7 +100,7 @@ export function ReportDetail() {
   async function downloadNotice() {
     try {
       const html = await fetchReportNoticeHtml(data.report_id)
-      downloadReportNoticeHtml(data.report_id, html)
+      downloadReportNoticeHtml(data.report_id, html, data.tracking_id)
       toast.success('Report downloaded')
     } catch {
       /* fetchReportNoticeHtml toasts API failures */
@@ -174,7 +175,11 @@ export function ReportDetail() {
 
           <Card className="p-4">
             <h2 className="text-sm font-medium text-[#888]">AI analysis</h2>
-            {data.ai_result?.violation_flag ? (
+            {data.ai_result?.violation_type === 'Manual_Review' ? (
+              <div className="mt-3 rounded-md border border-[#666] bg-[#2a2a2a] px-3 py-2 text-[#e0e0e0]">
+                Manual review required
+              </div>
+            ) : data.ai_result?.violation_flag ? (
               <div className="mt-3 rounded-md border border-white/25 bg-white/10 px-3 py-2 text-white">
                 Violation flagged
               </div>

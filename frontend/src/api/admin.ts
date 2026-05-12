@@ -1,3 +1,4 @@
+import type { RoleName } from '../types/user'
 import { api } from './axios'
 
 export type AdminUser = {
@@ -5,6 +6,8 @@ export type AdminUser = {
   username: string
   email: string
   role: boolean
+  role_name: RoleName
+  assigned_area: string | null
   last_login: string | null
 }
 
@@ -17,7 +20,8 @@ export async function createUser(body: {
   username: string
   email: string
   password: string
-  role: boolean
+  role_name: RoleName
+  assigned_area?: string | null
 }) {
   const { data } = await api.post<AdminUser>('/api/admin/users', body)
   return data
@@ -25,7 +29,13 @@ export async function createUser(body: {
 
 export async function updateUser(
   id: number,
-  body: Partial<{ username: string; email: string; password: string; role: boolean }>,
+  body: Partial<{
+    username: string
+    email: string
+    password: string
+    role_name: RoleName
+    assigned_area: string | null
+  }>,
 ) {
   const { data } = await api.put<AdminUser>(`/api/admin/users/${id}`, body)
   return data

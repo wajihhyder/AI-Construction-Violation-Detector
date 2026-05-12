@@ -18,6 +18,8 @@ export function ResultStep({ data, onReset }: Props) {
   const district = data.district_location ?? ''
   const violation = ai?.violation_flag
   const imgSrc = ai?.image_evidence_path ?? ''
+  const isManualReview = ai?.violation_type === 'Manual_Review' || data.status === 'Under_Review'
+  const isInvalid = data.status === 'Invalid'
 
   return (
     <div className="space-y-6">
@@ -39,7 +41,15 @@ export function ResultStep({ data, onReset }: Props) {
         </div>
       </div>
 
-      {violation ? (
+      {isManualReview ? (
+        <div className="rounded-[var(--radius-lg)] border border-white/30 bg-white/5 px-6 py-4 text-center font-semibold text-white">
+          SUBMITTED FOR MANUAL REVIEW
+        </div>
+      ) : isInvalid ? (
+        <div className="rounded-[var(--radius-lg)] border border-[#666] bg-[#111] px-6 py-4 text-center font-semibold text-[#ddd]">
+          AUTOMATED ANALYSIS UNAVAILABLE
+        </div>
+      ) : violation ? (
         <div className="rounded-[var(--radius-lg)] border-2 border-white bg-black px-6 py-4 text-center font-semibold text-white">
           VIOLATION DETECTED
           <div className="mt-2 flex justify-center">
@@ -49,6 +59,12 @@ export function ResultStep({ data, onReset }: Props) {
       ) : (
         <div className="rounded-[var(--radius-lg)] border border-[#333] bg-white px-6 py-4 text-center font-semibold text-black">
           NO VIOLATION FOUND
+        </div>
+      )}
+
+      {data.notes && (
+        <div className="rounded-[var(--radius-md)] border border-[#333] bg-[#111] px-4 py-3 text-sm text-[#bbb]">
+          {data.notes}
         </div>
       )}
 
@@ -87,7 +103,7 @@ export function ResultStep({ data, onReset }: Props) {
         </div>
         <div>
           <span className="text-[#555]">GPS</span>{' '}
-          <span className="font-mono text-xs text-[#888]">{ai?.gps_coords}</span>
+          <span className="font-mono text-xs text-[#888]">{ai?.gps_coords ?? '—'}</span>
         </div>
         {data.submission_date && (
           <div>
@@ -97,7 +113,7 @@ export function ResultStep({ data, onReset }: Props) {
         )}
         <div className="flex items-center gap-2">
           <span className="text-[#555]">Status</span>
-          <Badge status={data.status}>{data.status}</Badge>
+          <Badge status={data.status}>{data.status.replace(/_/g, ' ')}</Badge>
         </div>
       </div>
 

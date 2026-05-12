@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import forms from '@tailwindcss/forms'
 
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -13,8 +14,8 @@ export default {
         'g-green': '#34A853',
       },
       fontFamily: {
-        sans: ['DM Sans', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Outfit', 'sans-serif'],
+        mono: ['Outfit', 'sans-serif'],
       },
       animation: {
         shimmer: 'shimmer 1.5s infinite',
@@ -28,5 +29,5 @@ export default {
       },
     },
   },
-  plugins: [require('@tailwindcss/forms')],
+  plugins: [forms],
 } satisfies Config

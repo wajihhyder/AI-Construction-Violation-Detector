@@ -31,6 +31,7 @@ class CitizenReportPollResponse(BaseModel):
     input_type: bool | None = None
     submission_date: datetime | None = None
     reporter_type: str
+    notes: str | None = None
     ai_result: AIResultPublic | None = None
 
 
@@ -56,6 +57,7 @@ class AuthorityReportListItem(BaseModel):
 
 class AuthorityReportDetail(BaseModel):
     report_id: int
+    tracking_id: str
     submission_date: datetime
     district_location: str
     input_type: bool | None

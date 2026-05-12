@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from urllib.parse import urljoin
 
 from models.report import ViolationsReport
 
@@ -177,6 +178,12 @@ def _executive_summary(report: ViolationsReport, ai) -> str:
             "Automated screening output was not yet attached when this report was generated; "
             "confirm current workflow status in this system before enforcement steps."
         )
+    if ai.violation_type == "Manual_Review":
+        return (
+            f"Report #{rid:05d} in {d} was routed for manual review. "
+            "The configured automated model screens street-view floor counts only, "
+            "so aerial setback or encroachment checks still require staff verification."
+        )
     if ai.violation_flag:
         vt = _fmt_violation_type_label(ai.violation_type)
         return (
@@ -202,7 +209,7 @@ def _follow_up_guidance(status: str) -> str:
     )
 
 
-def build_authority_report_context(report: ViolationsReport, settings) -> dict:
+def build_authority_report_context(report: ViolationsReport, settings, base_url: str | None = None) -> dict:
     """
     Context for printable/downloadable general authority report (structured sections, tabular data).
     """
@@ -226,6 +233,9 @@ def build_authority_report_context(report: ViolationsReport, settings) -> dict:
         floors = str(ai.detected_floors) if ai.detected_floors is not None else "—"
         setback = f"{float(ai.setback_error):.4g}" if ai.setback_error is not None else "—"
         evidence_path = (ai.image_evidence_path or "").strip() or "—"
+        if ai.violation_type == "Manual_Review":
+            screening_state = "Manual review required"
+            vflag_lbl = "Pending manual review"
     else:
         screening_state = "Pending"
         vflag_lbl = "Pending"
@@ -255,11 +265,14 @@ def build_authority_report_context(report: ViolationsReport, settings) -> dict:
     ]
 
     hint = ""
+    evidence_image_url: str | None = None
     if evidence_path.startswith("/uploads/"):
         hint = (
             "Evidence is stored on the application server under this path; open from the authority dashboard "
             "image viewer when connected to the same deployment."
         )
+        if base_url:
+            evidence_image_url = urljoin(base_url.rstrip("/") + "/", evidence_path.lstrip("/"))
 
     return {
         "report_title": "Authority Screening Report",
@@ -276,6 +289,7 @@ def build_authority_report_context(report: ViolationsReport, settings) -> dict:
         "executive_summary": _executive_summary(report, ai),
         "screening_rows": screening_rows,
         "evidence_path": evidence_path,
+        "evidence_image_url": evidence_image_url,
         "evidence_url_hint": hint,
         "notes": (report.notes or "").strip(),
         "follow_up_guidance": _follow_up_guidance(report.status),

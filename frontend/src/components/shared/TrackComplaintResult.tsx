@@ -20,7 +20,9 @@ export function TrackComplaintResult({ data, onClose, onRefresh, refreshing }: P
   const inputLabel =
     data.input_type === null ? '—' : data.input_type ? 'Street View' : 'Aerial'
 
-  const processing = !ai && data.status === 'Processing'
+  const processing = data.status === 'Processing'
+  const manualReview = data.status === 'Under_Review' || ai?.violation_type === 'Manual_Review'
+  const invalid = data.status === 'Invalid'
 
   let aiSummary: ReactNode
   if (processing) {
@@ -40,8 +42,27 @@ export function TrackComplaintResult({ data, onClose, onRefresh, refreshing }: P
         )}
       </div>
     )
+  } else if (invalid) {
+    aiSummary = (
+      <p className="mt-2 text-sm font-medium text-[#ddd]">
+        Automated analysis could not be completed.
+        {data.notes ? ` ${data.notes}` : ''}
+      </p>
+    )
+  } else if (manualReview) {
+    aiSummary = (
+      <p className="mt-2 text-sm font-medium text-[#ddd]">
+        Submitted for manual review.
+        {data.notes ? ` ${data.notes}` : ''}
+      </p>
+    )
   } else if (!ai) {
-    aiSummary = <p className="mt-2 text-sm text-[#888]">AI result not available yet.</p>
+    aiSummary = (
+      <p className="mt-2 text-sm text-[#888]">
+        AI result not available yet.
+        {data.notes ? ` ${data.notes}` : ''}
+      </p>
+    )
   } else if (ai.violation_flag) {
     const label = ai.violation_type?.replace(/_/g, ' ') ?? 'Violation'
     aiSummary = (
@@ -51,7 +72,10 @@ export function TrackComplaintResult({ data, onClose, onRefresh, refreshing }: P
     )
   } else {
     aiSummary = (
-      <p className="mt-2 text-sm font-medium text-g-green">AI Result: NO VIOLATION FOUND</p>
+      <p className="mt-2 text-sm font-medium text-g-green">
+        AI Result: NO VIOLATION FOUND
+        {data.notes ? ` ${data.notes}` : ''}
+      </p>
     )
   }
 

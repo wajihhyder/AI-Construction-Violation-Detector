@@ -81,6 +81,23 @@
         text-align: justify;
         margin: 10px 0;
       }
+      .evidence-figure {
+        margin: 14px 0 6px;
+      }
+      .evidence-figure img {
+        display: block;
+        width: 100%;
+        max-height: 420px;
+        object-fit: contain;
+        border: 1px solid #222;
+        border-radius: 6px;
+        background: #f8f8f8;
+      }
+      .evidence-caption {
+        margin-top: 6px;
+        font-size: 9.5pt;
+        color: #444;
+      }
       ul.lines {
         margin: 8px 0;
         padding-left: 22px;
@@ -176,6 +193,14 @@
 
     <h2 class="section">5. Evidence on file</h2>
     <p class="summary"><strong>Image / evidence reference:</strong> {{ evidence_path }}</p>
+    {% if evidence_image_url %}
+    <figure class="evidence-figure">
+      <img src="{{ evidence_image_url }}" alt="Annotated evidence image for report {{ report_id_padded }}" />
+      <figcaption class="evidence-caption">
+        Evidence image embedded from the application uploads store for print/download use.
+      </figcaption>
+    </figure>
+    {% endif %}
     {% if evidence_url_hint %}
     <p class="summary" style="font-size: 10pt; color: #444">{{ evidence_url_hint }}</p>
     {% endif %}

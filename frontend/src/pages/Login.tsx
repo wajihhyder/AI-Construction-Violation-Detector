@@ -28,8 +28,10 @@ export function Login() {
         userId: data.user_id,
         username: data.username,
         role: data.role,
+        roleName: data.role_name,
+        assignedArea: data.assigned_area,
       })
-      if (data.role) {
+      if (data.role_name === 'ADMIN') {
         navigate('/admin/users', { replace: true })
       } else {
         navigate('/authority/reports', { replace: true })

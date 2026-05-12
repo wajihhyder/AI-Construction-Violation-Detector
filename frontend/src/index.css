@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap');
 @import 'leaflet/dist/leaflet.css';
 
 @tailwind base;
@@ -29,7 +30,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Outfit', sans-serif;
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
   background-image: radial-gradient(#333 1px, transparent 1px);
@@ -37,12 +38,18 @@ body {
   transition: all 0.2s ease;
 }
 
+button,
+input,
+select,
+textarea {
+  font-family: 'Outfit', sans-serif;
+}
+
 #root {
   min-height: 100vh;
 }
 
-/* Leaflet z-index under modals; grayscale tiles for monochrome UI */
+/* Leaflet z-index under modals */
 .leaflet-container {
   z-index: 0;
-  filter: grayscale(100%);
 }

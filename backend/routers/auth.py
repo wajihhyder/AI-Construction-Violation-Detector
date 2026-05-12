@@ -10,7 +10,7 @@ from core.security import create_access_token
 from database import get_db
 from models.user import User
 from schemas.user import LoginRequest, LoginResponse, MessageResponse, UserResponse
-from services.auth_service import authenticate_user
+from services.auth_service import authenticate_user, serialize_login, serialize_user
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +35,14 @@ async def login(
     db.refresh(user)
 
     token = create_access_token(
-        data={"sub": str(user.id), "role": user.role},
+        data={"sub": str(user.id), "role": user.role, "role_name": user.effective_role_name},
     )
-    return LoginResponse(
-        access_token=token,
-        token_type="bearer",
-        role=user.role,
-        username=user.username,
-        user_id=user.id,
-    )
+    return serialize_login(user, token)
 
 
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)):
-    return UserResponse.model_validate(current_user)
+    return serialize_user(current_user)
 
 
 @router.post("/logout", response_model=MessageResponse)

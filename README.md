@@ -62,10 +62,12 @@ Health check: `GET http://localhost:8000/health`
 
 ### Connecting the AI model
 
-1. Open `backend/services/ai_service.py`.
-2. Replace the **stub** implementations of `process_street_view_image` and `process_aerial_image` with calls to your model (e.g. YOLOv8).
-3. Return dicts with keys: `violation_flag`, `violation_type`, `detected_floors`, `setback_error`, `image_evidence_path` (use a `/uploads/...` path when serving annotated images).
-4. Optionally integrate `backend/services/rule_engine.py` for district zoning checks after detection.
+The repo is now wired to load `best_floor.pt` as the default street-view floor detector.
+
+1. Install backend dependencies with `pip install --prefer-binary -r requirements.txt`.
+2. Keep `best_floor.pt` in the repo root, or set `AI_STREET_MODEL_PATH` in `backend/.env`.
+3. Submit a `Street View` image from the citizen flow to trigger YOLO inference and save an annotated image under `/uploads/...`.
+4. Aerial uploads are currently routed to manual review until you add a dedicated setback / encroachment model in `backend/services/ai_service.py`.
 
 ### SQLite backup (manual)
 
@@ -113,6 +115,9 @@ npm run preview
 | `GEOAPIFY_API_KEY`        | Geoapify reverse geocoding (optional; fallback UI if empty) |
 | `UPLOAD_DIR`              | Folder for uploaded images                       |
 | `MAX_FILE_SIZE_MB`        | Max upload size                                  |
+| `AI_STREET_MODEL_PATH`    | Path to the YOLO `.pt` model used for street-view floor detection |
+| `AI_STREET_MODEL_CONFIDENCE` | Confidence threshold passed to YOLO prediction |
+| `AI_DEVICE`               | Inference device for YOLO (`cpu`, `cuda`, or `auto`) |
 | `FRONTEND_URL`            | Allowed CORS origin (e.g. `http://localhost:5173` in local dev) |
 | `FRONTEND_DIST`           | Override path to Vite `dist` (optional; default `../frontend/dist`, or `dist` inside a PyInstaller bundle) |
 | `NOTICE_REPLY_DAYS`       | Deadline shown on printable notice (default `7`) |

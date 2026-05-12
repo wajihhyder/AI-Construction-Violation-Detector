@@ -15,6 +15,7 @@ export type CitizenReportPoll = {
   input_type: boolean | null
   submission_date: string | null
   reporter_type: string
+  notes?: string | null
   ai_result: AIResult | null
 }
 

@@ -9,7 +9,7 @@ from database import Base, SessionLocal, engine
 import models  # noqa: F401 — register ORM tables on Base.metadata
 
 from core.security import get_password_hash
-from models.user import User
+from models.user import ROLE_ADMIN, User
 
 
 def seed() -> None:
@@ -24,6 +24,7 @@ def seed() -> None:
             email="admin@example.com",
             hashed_password=get_password_hash("Admin@1234"),
             role=True,
+            role_name=ROLE_ADMIN,
         )
         db.add(admin)
         db.commit()

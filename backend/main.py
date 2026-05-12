@@ -105,6 +105,83 @@ def _ensure_tracking_id_column() -> None:
 
 _ensure_tracking_id_column()
 
+
+def _ensure_user_role_columns() -> None:
+    """Add role_name / assigned_area if missing and normalize legacy role metadata."""
+    try:
+        insp = inspect(engine)
+        if "users" not in insp.get_table_names():
+            return
+        col_names = {c["name"] for c in insp.get_columns("users")}
+        with engine.begin() as conn:
+            if "role_name" not in col_names:
+                conn.execute(text("ALTER TABLE users ADD COLUMN role_name VARCHAR(32)"))
+            if "assigned_area" not in col_names:
+                conn.execute(text("ALTER TABLE users ADD COLUMN assigned_area VARCHAR(128)"))
+            conn.execute(
+                text(
+                    "UPDATE users "
+                    "SET role_name = CASE "
+                    "WHEN role = 1 THEN 'ADMIN' "
+                    "ELSE 'AUTHORITY' "
+                    "END "
+                    "WHERE role_name IS NULL OR role_name = ''"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE users "
+                    "SET assigned_area = NULL "
+                    "WHERE assigned_area IS NOT NULL AND TRIM(assigned_area) = ''"
+                )
+            )
+    except Exception as e:
+        logger.warning("Schema ensure user role columns: %s", e)
+
+
+_ensure_user_role_columns()
+
+
+def _ensure_indexes() -> None:
+    """Add common lookup indexes used by dashboards and scoped authority filters."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_violations_report_status "
+                    "ON violations_report (status)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_violations_report_district_location "
+                    "ON violations_report (district_location)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_violations_report_submission_date "
+                    "ON violations_report (submission_date)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_users_role_name "
+                    "ON users (role_name)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_users_assigned_area "
+                    "ON users (assigned_area)"
+                )
+            )
+    except Exception as e:
+        logger.warning("Schema ensure indexes: %s", e)
+
+
+_ensure_indexes()
+
 app = FastAPI(title="AI Powered Construction Violation Detection API", version="1.0.0")
 
 app.state.limiter = limiter

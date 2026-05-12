@@ -1,37 +1,63 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
+import { KARACHI_AREA_LABELS } from '../../constants/karachiAreas'
+import type { RoleName } from '../../types/user'
 
 type Props = {
+  existingRoles: RoleName[]
   onCreated: () => void
   onCancel: () => void
   submit: (body: {
     username: string
     email: string
     password: string
-    role: boolean
+    role_name: RoleName
+    assigned_area?: string | null
   }) => Promise<unknown>
 }
 
-export function CreateUser({ onCreated, onCancel, submit }: Props) {
+export function CreateUser({ existingRoles, onCreated, onCancel, submit }: Props) {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState('authority')
+  const [roleName, setRoleName] = useState<RoleName>('AUTHORITY')
+  const [assignedArea, setAssignedArea] = useState('')
   const [loading, setLoading] = useState(false)
+  const unavailableRoles = useMemo(
+    () => new Set<RoleName>(existingRoles.filter((role) => role === 'ADMIN' || role === 'DG')),
+    [existingRoles],
+  )
+  const roleOptions = useMemo(
+    () =>
+      [
+        { value: 'AUTHORITY', label: 'Authority' },
+        !unavailableRoles.has('DG') ? { value: 'DG', label: 'Director General (DG)' } : null,
+        !unavailableRoles.has('ADMIN') ? { value: 'ADMIN', label: 'Admin' } : null,
+      ].filter((option): option is { value: RoleName; label: string } => option !== null),
+    [unavailableRoles],
+  )
+
+  useEffect(() => {
+    if (unavailableRoles.has(roleName)) {
+      setRoleName('AUTHORITY')
+    }
+  }, [roleName, unavailableRoles])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (password.length < 8) return
+    if (roleName === 'AUTHORITY' && !assignedArea) return
     setLoading(true)
     try {
       await submit({
         username,
         email,
         password,
-        role: role === 'admin',
+        role_name: roleName,
+        assigned_area: roleName === 'AUTHORITY' ? assignedArea : null,
       })
       onCreated()
     } finally {
@@ -59,13 +85,29 @@ export function CreateUser({ onCreated, onCancel, submit }: Props) {
       />
       <Select
         label="Role"
-        options={[
-          { value: 'authority', label: 'Authority' },
-          { value: 'admin', label: 'Admin' },
-        ]}
-        value={role}
-        onChange={(e) => setRole(e.target.value)}
+        options={roleOptions}
+        value={roleName}
+        onChange={(e) => setRoleName(e.target.value as RoleName)}
       />
+      {unavailableRoles.size > 0 && (
+        <p className="text-xs text-[#666]">
+          {[
+            unavailableRoles.has('ADMIN') ? 'Admin already exists' : null,
+            unavailableRoles.has('DG') ? 'DG already exists' : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      )}
+      {roleName === 'AUTHORITY' && (
+        <Select
+          label="Assigned area"
+          options={KARACHI_AREA_LABELS.map((label) => ({ value: label, label }))}
+          value={assignedArea}
+          onChange={(e) => setAssignedArea(e.target.value)}
+          required
+        />
+      )}
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

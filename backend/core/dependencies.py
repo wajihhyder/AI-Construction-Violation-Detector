@@ -32,12 +32,12 @@ async def get_current_user(
 def require_authority(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    # Authority (False) or Admin (True) may access authority routes
+    # Authority, DG, or Admin may access authority routes.
     return current_user
 
 
 def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    if not current_user.role:
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"detail": "Admin role required", "code": "FORBIDDEN"},
