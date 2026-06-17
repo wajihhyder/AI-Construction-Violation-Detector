@@ -54,6 +54,8 @@ These are validation-set figures, measured at the same 960px size I trained at (
 
 ![Validation metrics over training](training/results_curve.png)
 
+results.csv can be found in training/results.csv
+
 ### How the model gets used in the app
 
 I exported the best checkpoint as `best_floor.pt` (it sits at the repo root). The backend loads it once through Ultralytics and, for each uploaded street image, runs inference, counts the floor detections, and saves an annotated copy as the evidence image. That floor count goes to the rule engine, which holds a floor limit per Karachi district and flags an `Extra_Floor` violation when the detected count is over the limit.
