@@ -128,3 +128,8 @@ Dockerfile, render.yaml   deployment
 ## Team
 
 Final year project, FAST-NUCES. My contribution was the floor-detection model, data collection, annotation, training and the inference integration. The web application was built together with my project teammates.
+
+
+## License
+
+This project is the joint work of the FYP team and is published for review and evaluation only — **all rights reserved** (see [`LICENSE`](LICENSE)). It may not be used, copied, modified, or redistributed without the team's written permission.
